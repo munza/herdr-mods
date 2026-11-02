@@ -26,7 +26,7 @@ Copy this prompt into your Herdr agent:
 
 ## Test
 
-Requires Node.js for development tests:
+Run the development tests from the repository root with Node.js installed:
 
 ```sh
 cd better-changes
