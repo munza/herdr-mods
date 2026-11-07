@@ -223,6 +223,11 @@ export class Agents {
     return sawDone ? RANK.done : (RANK[a.status] ?? 0);
   }
 
+  // Sort menu for the lists view's tab bar.
+  sortMenu() {
+    return this.renderSortMenu(sortOf());
+  }
+
   sortOptions() {
     const on = sortOf().id;
     return SORTS.map((s) =>
@@ -366,9 +371,10 @@ export class Agents {
       .bg(a.status === "done" ? color : t.dim + "00");
   }
 
-  render() {
+  // opts, from the lists view: `view` already read, `heading: false` under its tabs.
+  render(opts = {}) {
     const t = theme();
-    const view = this.readView();
+    const view = opts.view ?? this.readView();
     setAgentOrder(view.list.map((a) => a.address));
     const rows = view.collapsed
       ? view.list.flatMap((a, i) => this.agentWithSubs(a, i, view, t))
@@ -378,10 +384,10 @@ export class Agents {
       .size_full()
       .min_h(0)
       .bg(t.chrome)
-      .border_t(1)
-      .border_color(t.border)
+      // Under the lists view's tabs, the tab bar's space divides it instead.
+      .when(opts.heading !== false, (el) => el.border_t(1).border_color(t.border))
       .text_size(TEXT.body)
-      .when(!view.collapsed, (el) => el.child(this.heading(view.sort, t)))
+      .when(!view.collapsed && opts.heading !== false, (el) => el.child(this.heading(view.sort, t)))
       .when(view.list.length === 0 && !view.collapsed, (el) => el.child(this.emptyMessage(t)))
       .child(
         v_flex()
@@ -421,6 +427,7 @@ export class Agents {
     const list = [...pinned, ...rest];
     return {
       sort,
+      count: unordered.length,
       all,
       now,
       byPriority,
@@ -631,13 +638,12 @@ export class Agents {
 
   // Under a space header the space goes without saying; an automatic tab number
   // says nothing. Without one above (priority, pinned) the row names its space.
+  // Nested under its space's row (the lists view), it never does.
   agentName(a, view, t) {
     const more = view.details.get(a.address);
     const label = view.label(a);
-    const namesSpace = view.sort.id !== "grouped" || this.pins.includes(a.address);
-    const name = namesSpace
-      ? a.space_name || label
-      : (more ?? (/^\d+$/.test(label) ? a.program?.name || label : label));
+    const namesSpace = !view.nested && (view.sort.id !== "grouped" || this.pins.includes(a.address));
+    const name = more ?? (/^\d+$/.test(label) ? a.program?.name || label : label);
     const idle = a.status === "idle" && !a.focused;
     return h_flex()
       .flex_1()
@@ -647,13 +653,14 @@ export class Agents {
       .child(
         div()
           .min_w(0)
-          .max_w(namesSpace && more ? 120 : 200)
+          .max_w(namesSpace ? 140 : 200)
           .truncate()
           .text_color(idle ? t.muted : t.foreground)
           .child(name),
       )
-      .when(namesSpace && Boolean(more), (el) =>
-        el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`\u00b7 ${more}`)),
+      // The space, quietly after the name.
+      .when(namesSpace && Boolean(a.space_name), (el) =>
+        el.child(div().flex_1().min_w(0).truncate().text_size(TEXT.caption).text_color(t.dim).child(a.space_name)),
       );
   }
 

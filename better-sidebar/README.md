@@ -20,6 +20,17 @@ The agents block is adapted from Herdr's shipped panel and keeps its pins, sub-a
 - **Grouped by main space** puts a worktree's agents with its main checkout's, under the main space's name. A worktree whose main space is not open groups under the repository's folder name. It needs the spaces block of this mod in the same layout; without it each space is its own group.
 - **Grouped by prefix** gathers names like `PR-12`, `INS-4` and `PLAT-work`, also after a folder as in `feature/INS-4`. It reads the worktree or space name first, then the tab name. Capitals need only the dash, lower case needs a number after it, so `pr-12` counts and `herdr-mods` does not. Everything else goes under **No prefix**, last.
 
+## Spaces and agents in one block
+
+A block with `"props": { "view": "lists" }` shows both lists, under two tabs:
+
+- **Spaces:** the spaces list, with each space's agents beneath it in tab order, joined by tree lines. Pinned agents sit in a Pinned group above every space. Next-agent keys follow the same order.
+- **Agents:** the agents list, with its grouping menu at the right of the tabs.
+
+The Agents tab shows how many agents there are. For the ones that need you first, sort Agents by priority. The tab you pick is remembered. On the narrow rail, the two lists sit one above the other.
+
+Turn `combined` off in the settings for spaces above agents in the same block, without tabs, as two separate blocks would show them. The `spaces` and `agents` views still work on their own, for a layout that wants them in blocks of their own.
+
 ## Footer
 
 Settings and Add machine sit on one line as icons, with their names in tooltips. Settings shows a dot when an update is ready. With [Better Config](../better-config/README.md) installed, a Mod settings icon after Settings opens it.
@@ -76,10 +87,10 @@ The PR badge has no merge or review controls. Selecting its row selects the spac
 Add a `settings` block to the installed `mods/better-sidebar/mod.json` with only what you change. Copy your edits forward when you update the mod. `mod.schema.json` beside it describes every setting, so an editor that reads `$schema`, such as VS Code or Zed, checks the block as you type. The defaults:
 
 ```json
-"settings": { "git": { "retry_after": "15s" }, "pull_request_status": true }
+"settings": { "git": { "retry_after": "15s" }, "combined": true, "pull_request_status": true }
 ```
 
-`git.retry_after` is how long a failed Git read waits before it is tried again. `pull_request_status` set to `false` turns off the `gh` calls that colour pull-request state, for people without the GitHub CLI. Problems with the block are logged, not shown.
+`git.retry_after` is how long a failed Git read waits before it is tried again. `combined` set to `false` shows the `lists` view as spaces above agents instead of tabs. `pull_request_status` set to `false` turns off the `gh` calls that colour pull-request state, for people without the GitHub CLI. Problems with the block are logged, not shown.
 
 ## Development
 
