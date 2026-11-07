@@ -944,6 +944,14 @@ test('settings set list defaults and page size, and problems show at the top', a
 
 // ── Worktrees ───────────────────────────────────────────────────────────────
 
+test('a worktree on the PR\'s head branch counts without a herdr-pr binding, as when the PR came from it', async () => {
+  const list = 'worktree /repo\nHEAD a\nbranch refs/heads/main\n\nworktree /wt/mine\nHEAD b\nbranch refs/heads/fix\n\n';
+  const h = harness({ exec: git([['--get-regexp', ''], ['worktree list', list]]) });
+  h.mod.pr = PR();
+  h.mod.loadWorktrees(h.cx); await h.flush();
+  same(h.mod.currentWorktrees(), [{ path: '/wt/mine', branch: 'fix', name: 'mine' }]);
+});
+
 test('a PR\'s worktrees are listed and a click switches to or opens their space', async () => {
   const h = harness({ exec: git([['--get-regexp', 'branch.fix.herdr-pr owner/repo#2\n'], ['worktree list', 'worktree /wt/PR-2\nHEAD abc\nbranch refs/heads/fix\n\n']]) });
   h.mod.pr = PR({ repository: 'owner/repo' });
