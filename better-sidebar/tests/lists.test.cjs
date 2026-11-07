@@ -30,7 +30,7 @@ async function harness({ settings = {}, tab = null } = {}) {
   const live = { order: [] };
   const tabOf = (id) => ({ id, name: id });
   const spaces = [
-    { id: "shop", name: "shop", folder: "/shop", tabs: [tabOf("a"), tabOf("b")] },
+    { id: "shop", name: "shop", folder: "/shop", tabs: [tabOf("a"), tabOf("b"), tabOf("d")] },
     { id: "docs", name: "docs", folder: "/docs", tabs: [tabOf("c")] },
   ];
   const agent = (address, space, tab, status) => ({
@@ -38,6 +38,8 @@ async function harness({ settings = {}, tab = null } = {}) {
     space,
     space_name: space,
     tab,
+    tab_name: { a: "1", b: "2", c: "1" }[tab],
+    program: { name: "Claude Code" },
     status,
     pane: `p-${address}`,
     seq: 1,
@@ -88,10 +90,12 @@ const find = (node, id) => (node?.id === id ? node : node?.nodes?.map((n) => fin
 const ids = (node, out = []) => (node?.id && out.push(node.id), (node?.nodes ?? []).forEach((n) => ids(n, out)), out);
 const text = (node) => (typeof node === "string" ? node : (node?.nodes ?? []).map(text).join(" "));
 
-test("Spaces shows each space's agents beneath it, and next-agent keys follow that order", async () => {
+test("Spaces shows each space's tabs beneath it, as their agents where they have any, and next-agent keys follow that order", async () => {
   const { mod, live } = await harness();
-  const drawn = ids(mod.render()).filter((id) => /^(space-(shop|docs)|ag-t\d)$/.test(id));
-  assert.deepEqual(drawn, ["space-shop", "ag-t1", "ag-t3", "space-docs", "ag-t2"]);
+  const drawn = ids(mod.render()).filter((id) => /^(space-(shop|docs)|ag-t\d|tab-\w)$/.test(id));
+  assert.deepEqual(drawn, ["space-shop", "ag-t1", "ag-t3", "tab-d", "space-docs", "ag-t2"]);
+  // Its tab's title, then its program, quietly.
+  assert.match(text(find(mod.render(), "ag-t1")), /^\s*1\s+Claude Code/);
   assert.deepEqual(live.order, ["t1", "t3", "t2"]);
 });
 
@@ -129,4 +133,9 @@ test("in Spaces a pinned agent sits above every space", async () => {
   const order = ids(mod.render()).filter((id) => /^(space-(shop|docs)|ag-t\d)$/.test(id));
   assert.deepEqual(order, ["ag-t3", "space-shop", "ag-t1", "space-docs", "ag-t2"]);
 
+});
+
+test("an Agents row reads its tab's title, then its space", async () => {
+  const { mod } = await harness({ tab: "agents" });
+  assert.match(text(find(mod.render(), "ag-t1")), /^\s*1\s+shop/);
 });

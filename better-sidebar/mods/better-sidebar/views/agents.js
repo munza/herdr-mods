@@ -129,23 +129,6 @@ function agentLabel() {
   };
 }
 
-// A row reads "space · detail": the detail is a tab someone named or the agent's
-// own title, never an automatic tab number unless two rows would read the same.
-function agentDetails(list, label) {
-  const isNumber = (text) => /^\d+$/.test(text);
-  const details = new Map(list.map((a) => [a.address, isNumber(label(a)) ? null : label(a)]));
-  const seen = {};
-  for (const a of list) {
-    const key = `${a.space_name}\u0000${details.get(a.address) ?? ""}`;
-    seen[key] = (seen[key] ?? 0) + 1;
-  }
-  for (const a of list) {
-    if (details.get(a.address) == null && seen[`${a.space_name}\u0000`] > 1)
-      details.set(a.address, label(a));
-  }
-  return details;
-}
-
 // Same group next to each other, so the list reads, and next-agent keys move, in order.
 function gatherGroups(list, groupOf, sortId) {
   const gathered = new Map();
@@ -435,7 +418,6 @@ export class Agents {
       shown: focused()?.agent,
       list,
       label,
-      details: agentDetails(list, label),
       groups: this.makeGroups(pinned, rest, groupOf, byPriority, urgency),
     };
   }
@@ -623,6 +605,44 @@ export class Agents {
       .child(this.status(t, a, view.byPriority && !this.pins.includes(a.address)));
   }
 
+  // A tab with no agent, under its space in the lists view: its program and its name.
+  tabRow(w, tab, lit, t) {
+    const l = lead(tab);
+    // The tab's title, as Herdr's tab bar shows it.
+    const name = tab.name;
+    const prog = l?.program?.name;
+    return h_flex()
+      .id(`tab-${tab.id}`)
+      .px(8)
+      .h(30)
+      .flex_none()
+      .rounded(8)
+      .items_center()
+      .gap(9)
+      .when(lit, (el) => el.bg(t.selected))
+      .cursor_pointer()
+      .hover((s) => s.bg(t.hover))
+      .on_click(() => {
+        run("space.select", { id: w.id });
+        run("tab.select", { id: tab.id });
+      })
+      .child(icon(l?.program, 16, t.dim) ?? div().w(16).flex_none())
+      .child(
+        h_flex()
+          .flex_1()
+          .min_w(0)
+          .gap(5)
+          .items_center()
+          .child(div().min_w(0).truncate().text_color(lit ? t.foreground : t.muted).child(name))
+          .when(Boolean(prog) && prog !== name, (el) => el.child(this.programName(prog, t))),
+      );
+  }
+
+  // The program, quietly after a row's name under its space.
+  programName(prog, t) {
+    return div().flex_1().min_w(0).truncate().text_size(TEXT.caption).text_color(t.dim).child(prog);
+  }
+
   // With sub-agents, clicking the icon folds them.
   agentIcon(a, pic, subs) {
     return div()
@@ -636,14 +656,13 @@ export class Agents {
       .child(pic);
   }
 
-  // Under a space header the space goes without saying; an automatic tab number
-  // says nothing. Without one above (priority, pinned) the row names its space.
-  // Nested under its space's row (the lists view), it never does.
+  // The tab's title, then quietly its space; nested under its space's row, its program.
   agentName(a, view, t) {
-    const more = view.details.get(a.address);
     const label = view.label(a);
-    const namesSpace = !view.nested && (view.sort.id !== "grouped" || this.pins.includes(a.address));
-    const name = more ?? (/^\d+$/.test(label) ? a.program?.name || label : label);
+    const namesSpace = !view.nested;
+    // A row is its tab's title, as Herdr's tab bar shows it; the icon says which agent.
+    const name = a.tab_name || label;
+    const prog = a.program?.name;
     const idle = a.status === "idle" && !a.focused;
     return h_flex()
       .flex_1()
@@ -661,7 +680,9 @@ export class Agents {
       // The space, quietly after the name.
       .when(namesSpace && Boolean(a.space_name), (el) =>
         el.child(div().flex_1().min_w(0).truncate().text_size(TEXT.caption).text_color(t.dim).child(a.space_name)),
-      );
+      )
+      // Under its space, the program instead.
+      .when(view.nested && Boolean(prog) && prog !== name, (el) => el.child(this.programName(prog, t)));
   }
 
   // The fold chevron; folded, the count too, colored by the most urgent one.

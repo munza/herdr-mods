@@ -80,7 +80,7 @@
         },
         "combined": {
           "title": "Spaces and agents in tabs",
-          "description": "In a block showing both lists (view: lists), put them under tabs: Spaces with each space's agents beneath it, and Agents. Off: spaces above agents.",
+          "description": "In a block showing both lists (view: lists), put them under tabs: Spaces with each space's tabs and agents beneath it, and Agents. Off: spaces above agents.",
           "type": "boolean",
           "default": true
         },

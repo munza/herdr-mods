@@ -1,8 +1,8 @@
 // Spaces and agents in one block. Combined (the default): tabs for Spaces, with
-// each space's agents under it, and Agents. With `combined: false` in the settings: the
+// each space's tabs and agents under it, and Agents. With `combined: false` in the settings: the
 // two lists one above the other, as two blocks of this mod would draw them.
 import { v_flex, h_flex } from "gpui-base";
-import { agents, theme, setAgentOrder } from "herdr";
+import { agents, focused, theme, setAgentOrder } from "herdr";
 import { Spaces } from "./spaces.js";
 import { Agents } from "./agents.js";
 import { TEXT, Badge, Rail } from "./ui.js";
@@ -54,7 +54,7 @@ export class Lists {
     root.child(this.tabBar(t, view));
     if (this.tab !== "spaces") return root.child(this.agents.render({ view, heading: false }));
 
-    // Spaces, each with its agents beneath in tab order, so rows don't move as
+    // Spaces, each with its tabs and agents beneath in tab order, so rows don't move as
     // their state changes; next-agent keys follow that order.
     const nested = { ...view, sort: { id: "grouped" }, byPriority: false, nested: true };
     const order = [];
@@ -67,18 +67,28 @@ export class Lists {
     const nest = (lines, row) => h_flex().children(lines.map((l) => Rail(l))).child(row.flex_1().min_w(0));
     // A space's agents hang from its line; a main space's worktrees come after them,
     // so its line carries on, and a worktree's own agents sit one step further in.
+    // Every tab shows: a tab with agents as its agents, any other as itself.
+    const shownTab = focused()?.tab;
+    const plain = (tab) => !all.some((a) => a.tab === tab.id);
     this.spaces.under = ({ w, tree, kids }) => {
-      const mine = all.filter((a) => a.space === w.id && !pins.includes(a.address));
-      order.push(...mine.map((a) => a.address));
+      const items = w.tabs.flatMap((tab) =>
+        plain(tab)
+          ? tab.settled ? [] : [{ tab }]
+          : all.filter((a) => a.tab === tab.id && !pins.includes(a.address)).map((a) => ({ a })),
+      );
+      order.push(...items.filter((x) => x.a).map((x) => x.a.address));
       const before = tree ? [tree.startsWith("└") ? "" : "│"] : [];
-      return mine.flatMap((a, i) => {
-        const last = i === mine.length - 1 && !kids;
-        const [row, ...subs] = this.agents.agentWithSubs(a, i, nested, t);
+      return items.flatMap((x, i) => {
+        const last = i === items.length - 1 && !kids;
+        const [row, ...subs] = x.a
+          ? this.agents.agentWithSubs(x.a, i, nested, t)
+          : [this.agents.tabRow(w, x.tab, x.tab.id === shownTab, t)];
         return [nest([...before, last ? "└" : "├"], row), ...subs.map((s) => nest([...before, last ? "" : "│"], s))];
       });
     };
-    // One row lit: a space whose focused agent shows beneath it leaves it to that agent.
-    this.spaces.quiet = (w) => all.some((a) => a.space === w.id && a.focused);
+    // One row lit: a space whose focused agent or tab shows beneath it leaves it to that row.
+    this.spaces.quiet = (w) =>
+      all.some((a) => a.space === w.id && a.focused) || w.tabs.some((tab) => tab.id === shownTab && plain(tab));
     const body = this.spaces.body(t, false);
     setAgentOrder(order);
     return root.child(body);

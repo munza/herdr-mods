@@ -469,21 +469,31 @@ export class Spaces {
 
   // The right end of a name row: the branch unless it's the usual one or repeats the
   // name, and on the selected space how far it is from its remote.
-  gitTail(g, active, t, name) {
-    const branch = g.branch === "(detached)" ? "detached" : (g.branch ?? "detached");
-    return h_flex()
+  // The branch, quietly beside the name. main, master and the space's own name go without saying.
+  branchName(g, name, t) {
+    const branch = g?.branch === "(detached)" ? "detached" : (g?.branch ?? "detached");
+    const shown = g && !USUAL_BRANCHES.has(branch) && branch !== name;
+    return div()
       .flex_1()
       .min_w(0)
+      .truncate()
+      .text_size(TEXT.caption)
+      .text_color(t.dim)
+      .when(shown, (el) => el.tooltip(branch).child(branch));
+  }
+
+  // At the right: the checkout's pull request, and ahead/behind on the selected space.
+  gitTail(g, active, t, w) {
+    const pr = w ? this.prBadge(w, t) : null;
+    return h_flex()
+      .flex_none()
       .gap(5)
-      .justify_end()
       .items_center()
       .text_size(TEXT.label)
       .text_color(t.dim)
-      .when(!USUAL_BRANCHES.has(branch) && branch !== name, (el) =>
-        el.child(div().min_w(0).truncate().tooltip(branch).child(branch)),
-      )
-      .when(active && g.ahead > 0, (el) => el.child(Badge(`\u2191${g.ahead}`)))
-      .when(active && g.behind > 0, (el) => el.child(Badge(`\u2193${g.behind}`)));
+      .when(Boolean(pr), (el) => el.child(pr))
+      .when(active && g?.ahead > 0, (el) => el.child(Badge(`\u2191${g.ahead}`)))
+      .when(active && g?.behind > 0, (el) => el.child(Badge(`\u2193${g.behind}`)));
   }
 
   // The branch and PR must describe the same checkout: the space's first
@@ -572,32 +582,27 @@ export class Spaces {
     return badge;
   }
 
+  // Under the row only when the PR lookup failed; the PR itself sits at the row's right.
   prLine(w, t, tree) {
     const status = this.checkoutStatus(w);
     return h_flex()
       .id(`space-pr-line-${w.id}`)
       .h(20)
       .pl(tree ? 44 : 27)
-      .gap(6)
       .items_center()
-      .tooltip(
-        status?.error ? `PR refresh failed: ${status.error}` : "Pull requests for this checkout",
-      )
-      .when(Boolean(status?.prs.length), (el) => el.child(this.prBadge(w, t)))
-      .when(Boolean(status?.error), (el) =>
-        el.child(
-          div()
-            .text_size(TEXT.caption)
-            .text_color(t.dim)
-            .child(status.prs.length ? "· stale" : "PR unavailable"),
-        ),
+      .tooltip(`PR refresh failed: ${status.error}`)
+      .child(
+        div()
+          .text_size(TEXT.caption)
+          .text_color(t.dim)
+          .child(status.prs.length ? "PR may be stale" : "PR unavailable"),
       );
   }
   // ── Expanded/compact rows and sidebar rendering ──────────────────────────
 
   row({ w, i, g, tree }, t) {
     const status = this.checkoutStatus(w);
-    const hasPRLine = Boolean(status?.prs.length || status?.error);
+    const hasPRLine = Boolean(status?.error);
     // One row is lit: under the lists view, the focused agent beneath takes it.
     const lit = w.active && !this.quiet?.(w);
     const row = v_flex()
@@ -670,7 +675,8 @@ export class Spaces {
       .child(
         div().min_w(0).max_w(150).truncate().tooltip(w.name).text_color(t.foreground).child(w.name),
       )
-      .child(g ? this.gitTail(g, w.active, t, w.name) : div().flex_1());
+      .child(this.branchName(g, w.name, t))
+      .child(this.gitTail(g, w.active, t, w));
   }
 
   avatar(w, t) {
