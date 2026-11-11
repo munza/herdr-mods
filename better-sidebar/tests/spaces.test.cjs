@@ -19,6 +19,7 @@ function harness() {
     dim: "gray",
     ansi1: "red",
     ansi2: "green",
+    ansi3: "yellow",
     ansi5: "purple",
   };
   function element() {
@@ -140,22 +141,32 @@ function text(node) {
 }
 const result = (stdout) => ({ code: 0, stdout });
 
-test("PR appearance distinguishes open, draft, merged, closed, and failed checks", () => {
+test("PR appearance distinguishes open, draft, merged, closed, failed checks, conflicts, review and ready", () => {
   const h = harness();
   h.context.colors = h.colors;
-  for (const [pr, icon, color] of [
+  for (const [pr, icon, color, label, ready] of [
     [{ state: "OPEN" }, "pull-request", "green"],
     [{ state: "OPEN", isDraft: true }, "draft", "gray"],
     [{ state: "MERGED", isDraft: true }, "merged", "purple"],
     [{ state: "CLOSED" }, "closed", "red"],
     [{ state: "OPEN", statusCheckRollup: [{ conclusion: "FAILURE" }] }, "pull-request", "red"],
     [{ state: "OPEN", statusCheckRollup: [{ state: "ERROR" }] }, "pull-request", "red"],
-    [{ state: "OPEN", statusCheckRollup: [{ status: "IN_PROGRESS" }] }, "pull-request", "green"],
+    [{ state: "OPEN", statusCheckRollup: [{ status: "IN_PROGRESS" }] }, "pull-request", "green", "Open"],
+    [{ state: "OPEN", mergeStateStatus: "DIRTY", statusCheckRollup: [{ conclusion: "FAILURE" }] }, "pull-request", "red", "Conflicts"],
+    [{ state: "OPEN", isDraft: true, mergeStateStatus: "DIRTY" }, "draft", "gray", "Draft"],
+    [{ state: "OPEN", reviewDecision: "CHANGES_REQUESTED", statusCheckRollup: [{ conclusion: "FAILURE" }] }, "pull-request", "red", "Checks failed"],
+    [{ state: "OPEN", reviewDecision: "CHANGES_REQUESTED", mergeStateStatus: "CLEAN" }, "pull-request", "yellow", "Changes requested"],
+    [{ state: "OPEN", reviewDecision: "APPROVED", mergeStateStatus: "CLEAN" }, "pull-request", "green", "Ready to merge", true],
+    [{ state: "OPEN", reviewDecision: "", mergeStateStatus: "CLEAN" }, "pull-request", "green", "Ready to merge", true],
+    [{ state: "OPEN", reviewDecision: "REVIEW_REQUIRED", mergeStateStatus: "BLOCKED" }, "pull-request", "green", "Open"],
+    [{ state: "OPEN", reviewDecision: "APPROVED", mergeStateStatus: "BEHIND" }, "pull-request", "green", "Open"],
   ]) {
     h.context.pr = pr;
     const appearance = vm.runInContext("prAppearance(pr, colors)", h.context);
     assert.equal(appearance.icon, icon);
     assert.equal(appearance.color, color);
+    if (label) assert.equal(appearance.label, label);
+    assert.equal(Boolean(appearance.ready), Boolean(ready));
   }
 });
 
