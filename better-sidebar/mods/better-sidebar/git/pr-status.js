@@ -181,11 +181,13 @@ export class PRStatusObserver {
     const key = JSON.stringify(args);
     const cached = this.cache.get(key);
     if (cached && Date.now() - cached.at < PR_POLL_MS) return cached.data;
+    // Stamp when the call started, like the poll does, so the next poll never lands on this entry.
+    const at = Date.now();
     const result = await exec("gh", args);
     if (result.code !== 0)
       throw new Error((result.stderr || "GitHub unavailable; check gh auth login").trim());
     const data = JSON.parse(result.stdout);
-    this.cache.set(key, { at: Date.now(), data });
+    this.cache.set(key, { at, data });
     return data;
   }
 }
