@@ -4,6 +4,7 @@
 //   the menu           a popup at the pointer on right-click
 // shared("better-files.*") connects them. The class is built from:
 //   files/reads.js        the folder tree and Git's view of it
+//   files/file-icons.js   Better Icons' pictures, when it's installed
 //   actions/open.js       opening tabs, and handing a file to Better Changes
 //   actions/outside.js    code editors, Finder
 //   actions/agents.js     sending a file to an agent
@@ -14,6 +15,7 @@ import { View } from "gpui-kit";
 import { TextareaState } from "gpui-base";
 import { appHome, exec, nextCommand, props, setShared, shared, spaces } from "herdr";
 import { loadSettings, duration } from "./settings.js";
+import { loadFileIcons } from "./files/file-icons.js";
 import { readMethods } from "./files/reads.js";
 import { openMethods } from "./actions/open.js";
 import { outsideMethods } from "./actions/outside.js";
@@ -40,6 +42,11 @@ class BetterFiles extends View {
     setShared("mod-icons", {
       ...(shared("mod-icons") ?? {}),
       "better-files": "mods/better-files/icons/file.svg",
+    });
+    this.fileIcons = null;
+    cx.spawn(async (cx) => {
+      this.fileIcons = await loadFileIcons();
+      if (this.fileIcons) cx.notify();
     });
     if (this.mode === "viewer") return this.initViewer(p, cx);
     this.initSidebar(cx);

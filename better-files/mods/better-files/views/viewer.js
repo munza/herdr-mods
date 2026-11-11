@@ -20,7 +20,7 @@ import {
 } from "../files/model.js";
 import { viewerEntries } from "../actions/open.js";
 import { foundEditors } from "../actions/outside.js";
-import { TEXT, Icon, Markdown, Message, MenuButton, TextButton, codeFont, codeSize } from "./ui.js";
+import { TEXT, FileIcon, Markdown, Message, MenuButton, TextButton, codeFont, codeSize } from "./ui.js";
 
 const CHAR_WIDTH = 0.62; // Of the code font's size, to size the sideways scroll.
 const LINE_COLUMNS = 6; // The number column and a margin, in the same units.
@@ -535,7 +535,9 @@ export const viewerMethods = {
           .border_b(1)
           .border_color(t.border)
           .text_size(TEXT.small)
-          .child(Icon("file", 14).text_color(t.dim))
+          .child(
+            FileIcon({ icons: this.fileIcons, relative: this.file.path.slice(this.file.root.length + 1), color: t.dim }),
+          )
           .child(div().flex_none().truncate().max_w(260).font_medium().child(head.title))
           .child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(head.detail))
           .child(this.viewerActions()),
