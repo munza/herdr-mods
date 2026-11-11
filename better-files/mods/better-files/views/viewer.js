@@ -29,7 +29,13 @@ const REMOVED_ROW = 8;
 
 // $1 the file, $2 its copy, $3 the copy of what this tab showed before. No file name reaches
 // the script itself, and only the cache's own copies are ever removed.
-const COPY_IMAGE = `[ -z "$3" ] || rm -f -- "$3"; mkdir -p -- "$(dirname -- "$2")" && { cmp -s -- "$1" "$2" || cp -- "$1" "$2"; }`;
+// Copies go in a hidden folder: saving any other file in a mod's folder makes Herdr reload
+// the mod, which threw the tree away on every picture opened. Herdr doesn't see a hidden file
+// change either, so a copy is never saved over: an out-of-date one exits STALE_COPY, and the
+// picture is copied again under a new name, the old copy going as the third argument.
+const CACHE = "mods/better-files/.cache";
+const STALE_COPY = 3;
+const COPY_IMAGE = `[ -z "$3" ] || rm -f -- "$3"; mkdir -p -- "$(dirname -- "$2")" && { cmp -s -- "$1" "$2" && exit 0; [ -e "$2" ] && exit ${STALE_COPY}; cp -- "$1" "$2"; }`;
 
 export const viewerMethods = {
   // What this tab shows: the registry, then what it was opened with, after a restart.
@@ -309,8 +315,7 @@ export const viewerMethods = {
   },
 
   // Herdr only loads images from under its own folder, so the file is shown through a copy
-  // in this mod's cache. Saving over the copy updates what's on screen, which is how a
-  // changed image refreshes. Each file a tab shows gets its own name, for the same reason.
+  // in this mod's cache. Each file a tab shows, and each change to it, gets its own name.
   readImage(cx) {
     const file = this.file;
     if (file.on || this.reading) return;
@@ -319,7 +324,7 @@ export const viewerMethods = {
       this.imageSerial = (this.imageSerial ?? 0) + 1;
       this.imageOld = this.imageCopy;
       const ext = file.path.split(".").pop().toLowerCase();
-      this.imageCopy = `mods/better-files/cache/${this.viewerId}-${this.imageSerial}.${ext}`;
+      this.imageCopy = `${CACHE}/${this.viewerId}-${this.imageSerial}.${ext}`;
       this.imageShown = null;
     }
     const copy = this.imageCopy;
@@ -334,6 +339,12 @@ export const viewerMethods = {
       ).catch(() => null);
       this.reading = false;
       if (this.file?.path !== file.path) return;
+      if (result?.code === STALE_COPY) {
+        this.imageOld = copy;
+        this.imageSerial += 1;
+        this.imageCopy = `${CACHE}/${this.viewerId}-${this.imageSerial}.${copy.split(".").pop()}`;
+        return this.readImage(cx);
+      }
       const problem = result?.code === 0 ? null : "This file is no longer available.";
       const shown = problem ? null : copy;
       if (problem !== this.problem || shown !== this.imageShown) {
@@ -385,15 +396,23 @@ export const viewerMethods = {
     this.markdownCopies ??= new Map();
     this.markdownShown ??= new Map();
     this.markdownCopying ??= new Set();
+    this.markdownOld ??= new Map();
+    const name = (path) => `${CACHE}/${this.viewerId}-m${(this.markdownSerial = (this.markdownSerial ?? 0) + 1)}.${path.split(".").pop().toLowerCase()}`;
     for (const { path } of this.previewBlocks().filter((block) => block.type === "image")) {
       if (this.markdownCopying.has(path)) continue;
-      if (!this.markdownCopies.has(path))
-        this.markdownCopies.set(path, `mods/better-files/cache/${this.viewerId}-m${this.markdownCopies.size + 1}.${path.split(".").pop().toLowerCase()}`);
+      if (!this.markdownCopies.has(path)) this.markdownCopies.set(path, name(path));
       const copy = this.markdownCopies.get(path);
+      const old = this.markdownOld.get(path);
+      this.markdownOld.delete(path);
       this.markdownCopying.add(path);
       cx.spawn(async (cx) => {
-        const result = await exec("sh", ["-c", COPY_IMAGE, "copy-image", path, `${appHome()}/${copy}`, ""], {}).catch(() => null);
+        const result = await exec("sh", ["-c", COPY_IMAGE, "copy-image", path, `${appHome()}/${copy}`, old ? `${appHome()}/${old}` : ""], {}).catch(() => null);
         this.markdownCopying.delete(path);
+        if (result?.code === STALE_COPY) {
+          this.markdownOld.set(path, copy);
+          this.markdownCopies.set(path, name(path));
+          return this.readMarkdownImages(cx);
+        }
         const shown = result?.code === 0;
         if (this.markdownShown.get(path) !== shown) {
           this.markdownShown.set(path, shown);
