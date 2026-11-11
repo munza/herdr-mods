@@ -16,10 +16,10 @@ const source = FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8'))
 
 const TREE = { '/repo': [['d', 'src'], ['f', 'b.md'], ['f', 'a.md']], '/repo/src': [['f', 'main.go']] };
 
-function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
+function world({ spaceFolder = '/repo', focusOn = null, copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
   const store = new Map(Object.entries(sharedInit));
   const ran = [], execs = [], sent = [], clipboard = [], closed = [], overlays = [], urls = [];
-  const live = { layout, panes: [{ pane: 'p1', tab: 'tab1', cwd }], focused: { space: 's', tab: 'tab1', pane: 'p1', cwd }, agents, texts: { ...texts } };
+  const live = { layout, panes: [{ pane: 'p1', tab: 'tab1', cwd }, ...(focusOn ? [focusOn] : [])], focused: focusOn ? { space: 's', tab: focusOn.tab, pane: focusOn.pane, cwd: null } : { space: 's', tab: 'tab1', pane: 'p1', cwd }, agents, texts: { ...texts } };
   const timers = [];
   const pending = [];
   const cx = {
@@ -59,7 +59,7 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
     theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
     settings: () => ({ font_family: 'Code', font_size: 14 }), window: () => ({ platform: 'macos' }),
     props: () => ({ mode, viewer, file, target, space: 's', overlay: 'ov1' }),
-    spaces: () => [{ id: 's', active: true, folder: '/repo', machine, tabs: [{ id: 'tab1' }] }],
+    spaces: () => [{ id: 's', active: true, folder: spaceFolder, machine, tabs: [{ id: 'tab1' }, ...(focusOn ? [{ id: focusOn.tab, active: true }] : [])] }],
     panes: () => live.panes, focused: () => live.focused, agents: () => live.agents,
     shared: (k) => store.get(k), setShared: (k, v) => { store.set(k, v); return null; },
     run: (name, args) => {
@@ -652,4 +652,18 @@ test('links open on the web, or open a file here in the viewer', async () => {
   assert.deepEqual(JSON.parse(JSON.stringify(args.props.file)), { path: '/repo/docs/next.md', root: '/repo', on: null });
   link('../../elsewhere/x.md', h.cx);
   assert.equal(viewers(h).find((e) => e.file.path === '/elsewhere/x.md').file.root, '/elsewhere', 'outside the root, its own folder');
+});
+
+test('with a file tab focused from the start, the tree shows where the space\'s terminal is, not where the space was made', async () => {
+  const viewer = { pane: 'p2', tab: 'tab2', mod: 'better-files', cwd: null };
+  const h = await ready({ spaceFolder: '/made-here', focusOn: viewer });
+  assert.equal(h.mod.root, '/repo');
+  assert.match(strings(find(h.mod.render(), 'files-title')), /^Files\s+repo$/);
+  h.tick();
+  assert.equal(h.mod.root, '/repo', 'and it stays there');
+  const alone = await ready({ spaceFolder: '/made-here', focusOn: viewer });
+  alone.live.panes.splice(0, 1);
+  alone.mod.place = null;
+  alone.tick();
+  assert.equal(alone.mod.root, '/made-here', 'a space with no terminal falls back to its own folder');
 });

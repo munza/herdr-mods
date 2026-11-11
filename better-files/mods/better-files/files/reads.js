@@ -16,6 +16,19 @@ async function directory(path, on) {
   return out;
 }
 
+// Where a space is now: a terminal's folder in its shown tab, else in its other tabs. The
+// space's own folder is where it was made, which its terminals may have long left.
+function liveFolder(space) {
+  const tabs = space?.tabs ?? [];
+  const shown = tabs.find((t) => t.active)?.id;
+  const order = [shown, ...tabs.map((t) => t.id).filter((id) => id !== shown)];
+  for (const tab of order) {
+    const pane = panes().find((p) => p.tab === tab && p.cwd);
+    if (pane) return pane.cwd;
+  }
+  return null;
+}
+
 export const readMethods = {
   // The focused pane's folder. A file or diff tab has no folder of its own, so looking at
   // one keeps the tree where it was instead of jumping back to the space's.
@@ -31,7 +44,7 @@ export const readMethods = {
         : (space?.machine ?? null);
     const cwd = pane?.cwd || f?.cwd;
     if (!cwd && this.place?.space === space?.id && this.place?.cwd) return this.place;
-    return (this.place = { cwd: cwd || space?.folder, on, space: space?.id });
+    return (this.place = { cwd: cwd || liveFolder(space) || space?.folder, on, space: space?.id });
   },
 
   placeKey() {

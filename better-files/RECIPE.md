@@ -6,7 +6,7 @@ A read-only file browser for a person's Herdr window, for directing agents rathe
 
 One framed sidebar panel, radius 10, with a 42px header: the plain title Files with the folder's name in a badge, and on the right a folder icon, a menu opening the folder in each editor or Finder (this computer only), and refresh.
 
-Below is a tree for the focused pane's folder: 26px rows of chevron, icon, name and a Git letter, directories first, with a dot on a folder holding changes. A file or diff tab has no folder, so focusing one leaves the tree where it was.
+Below is a tree for the focused pane's folder: 26px rows of chevron, icon, name and a Git letter, directories first, with a dot on a folder holding changes. A file or diff tab has no folder, so focusing one leaves the tree where it was. With no folder yet, as when the panel first shows while a file tab is focused, the tree takes a terminal's folder in the space, the shown tab's first, and the space's own folder only when it has no terminal, since that's where the space was made and its terminals may have left it.
 
 A click opens the file in one shared centre tab per space, named after the file, or goes to its tab if it's already open. A double-click keeps that tab, and never opens a second. The next click starts a new shared tab.
 
