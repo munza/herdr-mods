@@ -6,7 +6,7 @@ A read-only file browser for a person's Herdr window, for directing agents rathe
 
 One framed sidebar panel, radius 10, with a 42px header: the plain title Files with the folder's name in a badge, and on the right a folder icon, a menu opening the folder in each editor or Finder (this computer only), and refresh.
 
-Below is a tree for the focused pane's folder: 26px rows of chevron, icon, name and a Git letter, directories first, with a dot on a folder holding changes. A file or diff tab has no folder, so focusing one leaves the tree where it was.
+Under the header, a filter row, 10px and 8px padding with a rule under it, holds a 28px text box on `input` with radius 8, "Filter files" as its placeholder, and a small × while it has text. Below is a tree for the focused pane's folder: 26px rows of chevron, icon, name and a Git letter, directories first, with a dot on a folder holding changes. A file or diff tab has no folder, so focusing one leaves the tree where it was.
 
 A click opens the file in one shared centre tab per space, named after the file, or goes to its tab if it's already open. A double-click keeps that tab, and never opens a second. The next click starts a new shared tab.
 
@@ -34,9 +34,11 @@ Changed lines come from `git diff -U0 HEAD`, with external diff and text convers
 
 The Markdown preview is gpui-base's `TextView.markdown`, as Herdr's own PR mod uses it, wrapped as `Markdown` in `views/ui.js`, selectable and not scrolling on its own. `markdownBlocks` in `files/model.js` splits the file only where an unindented line is just a local image, outside code fences, so each such picture is copied into the cache and drawn with `image()` like an image file; everything else goes to TextView whole. Links come back through `on_link_click`: `http(s)` goes to `cx.open_url`, a path is resolved from the file's folder and opened as a tree click would, and anchors and other schemes do nothing. The choice is `markdown: "preview" | "code"` on the viewer's registry entry. A tab's copies, its image and its Markdown pictures, are removed when it closes.
 
+The filter needs every file, not just the open folders, so it reads a list once per folder when the box first has text: `git ls-files -z --cached --others --exclude-standard` in the folder, which leaves out what Git ignores, or, outside a repository, `find . -mindepth 1 -maxdepth 12 ( -name .git -o … ) -prune -o ! -type d -print0 | head -c 4000000`, 5 deep at `/`, `/root` or a folder directly under `/home` or `/Users`. The watch marks the list stale, and it's read again on the next refresh, and at most every 30 seconds for a folder that can't be watched; the old list shows until the new one is in. `files/filter.js` turns it into files and the folders they're in, keeps up to 40,000, and matches: a name holding the words, case aside, or the path for words with a `/`; names starting with them first, then shorter paths; 200 at most. Matches are drawn with the tree's own rows under their folders, folders first; a folder above a match shows open and dim, and clicking a matching folder clears the box, opens it and its parents in the tree and scrolls to it with a `ScrollHandle`. The box's `submit` opens the first matching file, and Escape, through `on_key_down` on its row, clears it.
+
 ## Built from
 
-`mods/better-files/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Better Files), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `files/` (`model.js`, `reads.js`), `actions/` (`open.js`, `outside.js`, `agents.js`, `menus.js`), `views/` (`ui.js`, `tree.js`, `viewer.js`, `context-menu.js`), `icons/`. Adapted from Herdr's shipped Files mod.
+`mods/better-files/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Better Files), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `files/` (`model.js`, `reads.js`, `filter.js`), `actions/` (`open.js`, `outside.js`, `agents.js`, `menus.js`), `views/` (`ui.js`, `tree.js`, `filter.js`, `viewer.js`, `context-menu.js`), `icons/`. Adapted from Herdr's shipped Files mod.
 
 ## Watch out
 
@@ -45,6 +47,7 @@ Herdr's shipped layouts are read-only, so the sidebar only shows in a layout the
 ## Done when
 
 - `herdr-app check` passes, and the tree lists the focused pane's folder with Git marks.
+- Typing in the filter finds a file in a folder that was never opened, from Git's list in a repository; Enter opens it, and Escape brings back the tree as it was.
 - A click reuses one centre tab, a double-click keeps it, and the next click opens another.
 - An open file updates when it changes on disk, without losing your place when it hasn't.
 - A Markdown file opens rendered, Preview and Code switch it per tab, and its links and pictures work.

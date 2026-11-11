@@ -4,14 +4,15 @@
 //   the menu           a popup at the pointer on right-click
 // shared("better-files.*") connects them. The class is built from:
 //   files/reads.js        the folder tree and Git's view of it
+//   files/filter.js       what the filter matches, from a list of every file
 //   actions/open.js       opening tabs, and handing a file to Better Changes
 //   actions/outside.js    code editors, Finder
 //   actions/agents.js     sending a file to an agent
 //   actions/menus.js      popup menus
-//   views/tree.js, viewer.js, context-menu.js   the drawing
+//   views/tree.js, filter.js, viewer.js, context-menu.js   the drawing
 // files/model.js says what the data means; views/ui.js holds every look.
 import { View } from "gpui-kit";
-import { TextareaState } from "gpui-base";
+import { InputState, ScrollHandle, TextareaState } from "gpui-base";
 import { appHome, exec, nextCommand, props, setShared, shared, spaces } from "herdr";
 import { loadSettings, duration } from "./settings.js";
 import { readMethods } from "./files/reads.js";
@@ -20,6 +21,7 @@ import { outsideMethods } from "./actions/outside.js";
 import { agentMethods } from "./actions/agents.js";
 import { menuMethods } from "./actions/menus.js";
 import { treeMethods } from "./views/tree.js";
+import { filterMethods } from "./views/filter.js";
 import { viewerMethods } from "./views/viewer.js";
 import { contextMenuMethods } from "./views/context-menu.js";
 
@@ -83,6 +85,13 @@ class BetterFiles extends View {
     this.marks = {};
     this.editor = TextareaState.new({ placeholder: "What should it do with this?", rows: 3 });
     this.editor.on("change", (_e, cx) => cx.notify());
+    this.filter = InputState.new({ placeholder: "Filter files" });
+    this.filter.on("change", (_e, cx) => {
+      this.ensureIndex(cx);
+      cx.notify();
+    });
+    this.filter.on("submit", (_e, cx) => this.openFirstMatch(cx));
+    this.treeScroll = ScrollHandle.new();
     this.refresh(cx);
     this.findBetterChanges(cx);
     this.findNewAgents(this.on, cx);
@@ -133,6 +142,7 @@ Object.assign(
   agentMethods,
   menuMethods,
   treeMethods,
+  filterMethods,
   viewerMethods,
   contextMenuMethods,
 );

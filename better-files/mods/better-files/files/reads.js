@@ -1,6 +1,32 @@
 // Reading the folder tree, and Git's view of it, for the focused pane's folder.
 import { spaces, panes, focused, exec, watchFolder } from "herdr";
 import { PER_FOLDER, parseStatus, sortEntries } from "./model.js";
+import { indexOf } from "./filter.js";
+
+const INDEX_BYTES = 4000000;
+const INDEX_DEPTH = 12;
+// A home folder or /, which hold far more than a project, are searched less deep.
+const SHALLOW_DEPTH = 5;
+const SHALLOW_ROOT = /^\/(?:(?:home|Users)\/[^/]+|root)?$/;
+const REINDEX_MS = 30000;
+const SKIPPED = [".git", "node_modules", ".venv", "__pycache__", "target", "dist", ".next"];
+
+// Every file under the folder, for the filter: Git's own list where there is one, so ignored
+// files stay out, else find without the folders that are usually huge, cut at a size.
+async function everyFile(root, on) {
+  const git = await exec(
+    "git",
+    ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.quotepath=off", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+    { cwd: root, on },
+  ).catch(() => null);
+  if (git?.code === 0) return git.stdout;
+  const depth = SHALLOW_ROOT.test(root.replace(/\/+$/, "") || "/") ? SHALLOW_DEPTH : INDEX_DEPTH;
+  const prune = SKIPPED.map((name) => `-name '${name}'`).join(" -o ");
+  const script = `find . -mindepth 1 -maxdepth "$1" \\( ${prune} \\) -prune -o ! -type d -print0 | head -c "$2"`;
+  const found = await exec("sh", ["-c", script, "index", String(depth), String(INDEX_BYTES)], { cwd: root, on });
+  if (found.code !== 0) throw new Error(found.stderr || "Cannot list this folder.");
+  return found.stdout;
+}
 
 // Each read of a folder is bounded, and the names come back null-separated, so no file name
 // can break the list. Adapted from Herdr's shipped Files mod.
@@ -55,6 +81,7 @@ export const readMethods = {
       this.treeError = null;
       this.watch(cx);
     }
+    this.ensureIndex(cx);
     if (!cwd || this.loading === key) return;
     const token = key;
     this.loading = key;
@@ -121,12 +148,37 @@ export const readMethods = {
       try {
         while (this.key === key) {
           await watchFolder(root);
+          if (this.index?.key === key) this.index.stale = true;
           if (this.key === key) this.refresh(cx);
         }
       } catch {
         // No watcher here: the timer still refreshes.
       }
       if (this.watched === key) this.watched = null;
+    });
+  },
+
+  // The filter's list of every file, read when it's first needed, again once the folder
+  // changes on disk, and at most every 30 seconds for a folder that can't be watched.
+  ensureIndex(cx) {
+    const { root, on, key } = this;
+    if (!root || !this.filterText() || this.indexing === key) return;
+    const index = this.index?.key === key ? this.index : null;
+    if (index && !index.stale && Date.now() - index.at < REINDEX_MS) return;
+    this.indexing = key;
+    cx.spawn(async (cx) => {
+      try {
+        const listing = await everyFile(root, on);
+        if (this.key === key) {
+          this.index = { key, at: Date.now(), stale: false, ...indexOf(listing) };
+          this.indexError = null;
+        }
+      } catch (e) {
+        if (this.key === key) this.indexError = e.message ?? String(e);
+      } finally {
+        if (this.indexing === key) this.indexing = null;
+        cx.notify();
+      }
     });
   },
 

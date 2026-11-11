@@ -56,9 +56,10 @@ export const treeMethods = {
     else this.openFile(file, cx);
   },
 
-  row(relative, name, dir, depth, t) {
+  // match: the row's place among the filter's matches, which decides whether it shows open.
+  row(relative, name, dir, depth, t, match = null) {
     const path = `${this.root}/${relative}`;
-    const open = this.folders.has(relative);
+    const open = match ? match.open : this.folders.has(relative);
     const change = this.marks[path];
     const color = dir ? (holdsChange(this.marks, path) ? t.ansi3 : null) : markColor(change?.mark, t);
     const selected = !dir && Object.values(viewerEntries()).some((v) => v.file?.path === path);
@@ -78,6 +79,7 @@ export const treeMethods = {
       .when(!selected, (el) => el.hover((s) => s.bg(t.hover)))
       .on_click((event, cx) => {
         if (!dir) this.clickFile(relative, event, cx);
+        else if (match) this.revealFolder(relative, cx);
         else if (event?.click_count !== 2) this.toggleFolder(relative, cx);
       })
       .on_mouse_down("right", (_e, cx) => {
@@ -92,6 +94,7 @@ export const treeMethods = {
           .min_w(0)
           .truncate()
           .when(Boolean(color), (el) => el.text_color(color))
+          .when(Boolean(match && !match.hit && !color), (el) => el.text_color(t.dim))
           .child(name),
       )
       .when(Boolean(change), (el) => el.child(StatusLetter(change.mark)))
@@ -100,12 +103,13 @@ export const treeMethods = {
       );
   },
 
-  treeRows(prefix, depth, out, t) {
+  treeRows(prefix, depth, out, t, paths = []) {
     for (const entry of this.entries.get(prefix) ?? []) {
       if (out.length >= TOTAL_ROWS) return;
       const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
       out.push(this.row(relative, entry.name, entry.dir, depth, t));
-      if (entry.dir && this.folders.has(relative)) this.treeRows(relative, depth + 1, out, t);
+      paths.push(relative);
+      if (entry.dir && this.folders.has(relative)) this.treeRows(relative, depth + 1, out, t, paths);
     }
   },
 
@@ -211,16 +215,32 @@ export const treeMethods = {
           }),
         ),
     );
+    if (this.root) root.child(this.filterRow(t));
     if (failure) root.child(Message(failure, true));
     if (this.notice) root.child(Message(this.notice));
-    const body = v_flex().id("files-list").flex_1().min_h(0).min_w(0).overflow_y_scrollbar().p(6);
+    const body = v_flex()
+      .id("files-list")
+      .flex_1()
+      .min_h(0)
+      .min_w(0)
+      .overflow_y_scrollbar()
+      .track_scroll(this.treeScroll)
+      .p(6);
     if (!this.root) body.child(Message("Select a space to see its files."));
+    else if (this.filterText()) this.matchesView(body, t);
     else {
       const rows = [];
-      this.treeRows("", 0, rows, t);
+      const paths = [];
+      this.treeRows("", 0, rows, t, paths);
       if (!rows.length && !this.loading) body.child(Message("This folder is empty."));
       body.children(rows);
       if (rows.length >= TOTAL_ROWS) body.child(Message(`Showing the first ${TOTAL_ROWS} rows.`));
+      // A folder revealed from the filter is scrolled to once its row is there.
+      const at = this.scrollTo ? paths.indexOf(this.scrollTo) : -1;
+      if (at !== -1) {
+        this.treeScroll.scroll_to_item(at);
+        this.scrollTo = null;
+      }
     }
     root.child(body);
     if (this.composer) root.child(this.composerView());

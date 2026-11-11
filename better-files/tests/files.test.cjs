@@ -6,19 +6,22 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.join(__dirname, '../mods/better-files');
-const FILES = ['settings.js', 'files/model.js', 'views/ui.js', 'files/reads.js', 'actions/open.js', 'actions/outside.js', 'actions/agents.js', 'actions/menus.js', 'views/tree.js', 'views/viewer.js', 'views/context-menu.js', 'main.js'];
+const FILES = ['settings.js', 'files/model.js', 'files/filter.js', 'views/ui.js', 'files/reads.js', 'actions/open.js', 'actions/outside.js', 'actions/agents.js', 'actions/menus.js', 'views/tree.js', 'views/filter.js', 'views/viewer.js', 'views/context-menu.js', 'main.js'];
 const source = FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8'))
   .join('\n')
   .replace(/^import\s+[\s\S]*?;$/gm, '')
   .replace(/^export default (\w+);$/m, 'globalThis.Mod = $1;')
   .replace(/^export /gm, '')
-  + '\nObject.assign(globalThis, { parseStatus, parseHunks, buildRows, tokenize, viewable, languageOf, sortEntries, markdownBlocks, resolvePath, isMarkdown, MAX_CHARS });';
+  + '\nObject.assign(globalThis, { parseStatus, parseHunks, buildRows, tokenize, viewable, languageOf, sortEntries, markdownBlocks, resolvePath, isMarkdown, MAX_CHARS, indexOf, findMatches, matchRows, foldersTo, MAX_INDEXED, MAX_MATCHES });';
 
 const TREE = { '/repo': [['d', 'src'], ['f', 'b.md'], ['f', 'a.md']], '/repo/src': [['f', 'main.go']] };
 
-function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
+// Every file under /repo, as git ls-files -z would list it.
+const EVERY = 'a.md\0b.md\0new.txt\0src/main.go\0';
+
+function world({ everything = EVERY, found = '', copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
   const store = new Map(Object.entries(sharedInit));
-  const ran = [], execs = [], sent = [], clipboard = [], closed = [], overlays = [], urls = [];
+  const ran = [], execs = [], sent = [], clipboard = [], closed = [], overlays = [], urls = [], scrolled = [];
   const live = { layout, panes: [{ pane: 'p1', tab: 'tab1', cwd }], focused: { space: 's', tab: 'tab1', pane: 'p1', cwd }, agents, texts: { ...texts } };
   const timers = [];
   const pending = [];
@@ -45,16 +48,17 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
           if (k === 'on_link_click') t.handlers.link = a[0];
           if (k === 'on_open_change') t.handlers.open = a[0];
           if (k === 'on_mouse_down') t.handlers[`down-${a[0]}`] = a[1];
+          if (k === 'on_key_down') t.handlers.key = a[0];
           return proxy;
         };
       },
     });
     return proxy;
   }
-  const state = (o = {}) => ({ text: o.value ?? '', opts: o, sets: 0, value() { return this.text; }, set_value(v) { this.text = v; this.sets++; }, on() {}, focus() {}, release() { this.released = true; } });
+  const state = (o = {}) => ({ text: o.value ?? '', opts: o, sets: 0, handlers: {}, value() { return this.text; }, set_value(v) { this.text = v; this.sets++; this.handlers.change?.({}, cx); }, on(ev, fn) { this.handlers[ev] = fn; }, focus() {}, release() { this.released = true; } });
   const context = {
-    View: class {}, div: el, svg: el, image: (p) => { const e = el(); e.child(`image:${p}`); return e; }, h_flex: el, v_flex: el,
-    Popover: { new: (id) => el().id(id) }, Textarea: { new: () => el() }, TextareaState: { new: state },
+    View: class {}, div: el, svg: (p) => { const e = el(); e.svgPath = p; return e; }, image: (p) => { const e = el(); e.child(`image:${p}`); return e; }, h_flex: el, v_flex: el,
+    Popover: { new: (id) => el().id(id) }, Textarea: { new: () => el() }, TextareaState: { new: state }, Input: { new: () => el() }, InputState: { new: state }, ScrollHandle: { new: () => ({ scroll_to_item: (i) => scrolled.push(i) }) },
     Scrollbar: { vertical: () => el() }, TextView: { markdown: (id, text) => el().id(id).child(`md:${text}`) }, v_virtual_list: (_id, count, sizes, key, render) => { const e = el().id('viewer-list'); if (Array.isArray(sizes) && sizes.length !== count) throw new Error('sizes'); for (let i = 0; i < count; i++) key(i); e.children(render({ start: 0, end: Math.min(count, 60) })); return e; }, Editor: { new: (s) => el().child(s.text) }, EditorState: { new: (o) => { const s = state(o); context.lastCode = s; return s; } },
     theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
     settings: () => ({ font_family: 'Code', font_size: 14 }), window: () => ({ platform: 'macos' }),
@@ -74,6 +78,8 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
     exec: async (bin, args, options) => {
       execs.push([bin, ...args]);
       if (bin === 'sh' && args[2] === 'copy-image') return copyImage ?? { code: 0 };
+      if (bin === 'sh' && args[2] === 'index') return { code: 0, stdout: found };
+      if (bin === 'git' && args.includes('ls-files')) return top ? { code: 0, stdout: everything } : { code: 128, stdout: '' };
       if (bin === 'sh') return { code: 0, stdout: (tree[args.at(-1)] ?? []).flatMap(([k, n]) => [k, n, '']).join('\0').replace(/\0\0/g, '\0') };
       if (bin === 'mdfind') return { code: 0, stdout: editors.some((b) => args[0].includes(b)) ? '/Apps/It.app\n' : '' };
       if (bin === 'git' && args[0] === 'rev-parse') return top ? { code: 0, stdout: `${top}\n` } : { code: 128, stdout: '' };
@@ -88,7 +94,7 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
   const mod = new context.Mod();
   mod.init({}, cx);
   const flush = async () => { for (let i = 0; i < 25; i++) await new Promise(setImmediate); };
-  return { mod, cx, store, ran, execs, sent, clipboard, closed, overlays, urls, live, context, flush, tick: () => { for (const fn of timers) fn(cx); } };
+  return { mod, cx, store, ran, execs, sent, clipboard, closed, overlays, urls, scrolled, live, context, flush, tick: () => { for (const fn of timers) fn(cx); } };
 }
 const ready = async (o) => { const h = world(o); await h.flush(); return h; };
 const find = (node, id) => (node?.elementId === id ? node : node?.nodes?.map((n) => find(n, id)).find(Boolean));
@@ -652,4 +658,137 @@ test('links open on the web, or open a file here in the viewer', async () => {
   assert.deepEqual(JSON.parse(JSON.stringify(args.props.file)), { path: '/repo/docs/next.md', root: '/repo', on: null });
   link('../../elsewhere/x.md', h.cx);
   assert.equal(viewers(h).find((e) => e.file.path === '/elsewhere/x.md').file.root, '/elsewhere', 'outside the root, its own folder');
+});
+
+const typeFilter = async (h, text) => { h.mod.filter.set_value(text); await h.flush(); };
+const rowIds = (h) => (find(h.mod.render(), 'files-list').nodes ?? []).map((n) => n.elementId).filter((id) => typeof id === 'string');
+
+test('the filter index lists every file once, with the folders they are in', async () => {
+  const { context: m } = await ready();
+  const index = m.indexOf('./src/a.ts\0src/a.ts\0docs/guide/intro.md\0README.md\0');
+  assert.deepEqual([...index.files], ['src/a.ts', 'docs/guide/intro.md', 'README.md']);
+  assert.deepEqual([...index.dirs].sort(), ['docs', 'docs/guide', 'src']);
+  assert.equal(index.capped, false);
+  const cut = m.indexOf('one.md\0two.md\0thr');
+  assert.deepEqual([...cut.files], ['one.md', 'two.md'], 'a name cut short is dropped');
+  assert.equal(cut.capped, true);
+  const many = m.indexOf(Array.from({ length: m.MAX_INDEXED + 5 }, (_, i) => `f${i}`).join('\0') + '\0');
+  assert.equal(many.files.length, m.MAX_INDEXED);
+  assert.equal(many.capped, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(m.indexOf(''))), { files: [], dirs: [], capped: false });
+});
+
+test('a name holding the words matches, names that start with them first; a / matches the path', async () => {
+  const { context: m } = await ready();
+  const index = m.indexOf('src/button.tsx\0src/icons/play-button.svg\0docs/buttons.md\0ui/mybutton.md\0tests/a.spec.ts\0Makefile\0');
+  const paths = (q) => [...m.findMatches(index, q).hits.map((h) => h.path)];
+  assert.deepEqual(paths('BUTTON'), ['src/button.tsx', 'docs/buttons.md', 'ui/mybutton.md', 'src/icons/play-button.svg']);
+  assert.deepEqual(paths('icons'), ['src/icons']);
+  assert.deepEqual(JSON.parse(JSON.stringify(m.findMatches(index, 'icons').hits[0])), { path: 'src/icons', dir: true });
+  assert.deepEqual(paths('src/b'), ['src/button.tsx']);
+  assert.deepEqual(paths('nothing here'), []);
+  assert.deepEqual(paths('   '), []);
+  const big = m.indexOf(Array.from({ length: 250 }, (_, i) => `f${i}.md`).join('\0') + '\0');
+  const found = m.findMatches(big, '.md');
+  assert.equal(found.hits.length, m.MAX_MATCHES);
+  assert.equal(found.more, true);
+});
+
+test('matches show as a tree under their folders, folders first, and a folder reveals all the way down', async () => {
+  const { context: m } = await ready();
+  const rows = m.matchRows([{ path: 'src/ui/button.tsx', dir: false }, { path: 'docs', dir: true }, { path: 'a-button.md', dir: false }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(rows)), [
+    { relative: 'docs', name: 'docs', dir: true, depth: 0, hit: true, open: false },
+    { relative: 'src', name: 'src', dir: true, depth: 0, hit: false, open: true },
+    { relative: 'src/ui', name: 'ui', dir: true, depth: 1, hit: false, open: true },
+    { relative: 'src/ui/button.tsx', name: 'button.tsx', dir: false, depth: 2, hit: true, open: false },
+    { relative: 'a-button.md', name: 'a-button.md', dir: false, depth: 0, hit: true, open: false },
+  ]);
+  assert.deepEqual([...m.foldersTo('a/b/c', true)], ['a', 'a/b', 'a/b/c']);
+  assert.deepEqual([...m.foldersTo('a/b/c.md', false)], ['a', 'a/b']);
+});
+
+test('the filter finds a file in a folder not opened yet, from Git\'s list, and Enter opens it', async () => {
+  const h = await ready();
+  assert.ok(find(h.mod.render(), 'files-filter-input'), 'the filter sits under the header');
+  assert.equal(find(h.mod.render(), 'files-filter-clear'), undefined, 'no clear button while empty');
+  await typeFilter(h, 'main');
+  assert.equal(h.execs.filter((e) => e.includes('ls-files')).length, 1);
+  assert.equal(h.execs.filter((e) => e[0] === 'sh' && e[3] === 'index').length, 0, 'no find inside a repo');
+  assert.deepEqual(rowIds(h), ['files-row-src', 'files-row-src/main.go']);
+  assert.match(strings(find(h.mod.render(), 'files-row-src/main.go')), /main\.go M/);
+  const chevron = (id) => find(h.mod.render(), id).nodes[0].nodes[0].svgPath;
+  assert.equal(chevron('files-row-src'), 'mods/better-files/icons/chevron-down.svg', 'shut in the tree, open among the matches');
+  await typeFilter(h, 'mai');
+  assert.equal(h.execs.filter((e) => e.includes('ls-files')).length, 1, 'typing more reads nothing again');
+  h.mod.filter.handlers.submit({}, h.cx);
+  assert.equal(tabs(h).length, 1);
+  assert.equal(tabs(h)[0][1].name, 'main.go');
+  click(h, 'files-filter-clear');
+  assert.equal(h.mod.filter.value(), '');
+  assert.deepEqual(rowIds(h), ['files-row-src', 'files-row-a.md', 'files-row-b.md']);
+  assert.equal(find(h.mod.render(), 'files-row-src/main.go'), undefined, 'the tree is as it was, src still shut');
+});
+
+test('Escape clears the filter, and a folder picked from the matches opens in the tree and scrolls to it', async () => {
+  const h = await ready();
+  await typeFilter(h, 'zz');
+  assert.match(strings(find(h.mod.render(), 'files-list')), /^No matches\.$/);
+  let stopped = false;
+  await typeFilter(h, 'sr');
+  assert.deepEqual(rowIds(h), ['files-row-src']);
+  click(h, 'files-row-src');
+  await h.flush();
+  assert.equal(h.mod.filter.value(), '');
+  assert.ok(h.mod.folders.has('src'));
+  h.mod.render();
+  assert.deepEqual(h.scrolled, [0]);
+  assert.ok(find(h.mod.render(), 'files-row-src/main.go'), 'the folder opened');
+  await typeFilter(h, 'b.m');
+  const keys = find(h.mod.render(), 'files-filter');
+  keys.handlers.key({ key: 'escape' }, { stop_propagation: () => (stopped = true), notify() {} });
+  assert.equal(h.mod.filter.value(), '');
+  assert.equal(stopped, true);
+});
+
+test('Enter skips a matching folder for the first matching file, and a long list says it stops at 200', async () => {
+  const h = await ready({ everything: 'docs/doc.md\0' });
+  await typeFilter(h, 'doc');
+  assert.deepEqual(rowIds(h), ['files-row-docs', 'files-row-docs/doc.md']);
+  h.mod.filter.handlers.submit({}, h.cx);
+  assert.equal(tabs(h)[0][1].name, 'doc.md');
+  const many = await ready({ everything: Array.from({ length: 250 }, (_, i) => `n${i}.md`).join('\0') + '\0' });
+  await typeFilter(many, '.md');
+  assert.equal(rowIds(many).length, 200);
+  assert.equal(strings(find(many.mod.render(), 'files-list').nodes.at(-1)), 'Showing the first 200 matches.');
+});
+
+test('outside a repo the filter uses find, shallower in a home folder, and says when the list was cut', async () => {
+  const h = await ready({ top: null, found: './notes/todo.txt\0./notes/plan.txt\0./ca' });
+  await typeFilter(h, 'plan');
+  const call = h.execs.find((e) => e[0] === 'sh' && e[3] === 'index');
+  assert.deepEqual(call.slice(3), ['index', '12', '4000000']);
+  assert.match(call[2], /-name '\.git' -o -name 'node_modules'/);
+  assert.deepEqual(rowIds(h), ['files-row-notes', 'files-row-notes/plan.txt']);
+  assert.match(strings(find(h.mod.render(), 'files-list')), /only part of it was searched \(at most 40,000 files\)\.$/);
+  const home = await ready({ top: null, cwd: '/home/kim', tree: { '/home/kim': [] } });
+  await typeFilter(home, 'x');
+  assert.deepEqual(home.execs.find((e) => e[0] === 'sh' && e[3] === 'index').slice(4), ['5', '4000000']);
+});
+
+test('the list is read again when it is old, and a failed read says why', async () => {
+  const h = await ready();
+  await typeFilter(h, 'main');
+  h.mod.index.at = 0;
+  h.tick();
+  await h.flush();
+  assert.equal(h.execs.filter((e) => e.includes('ls-files')).length, 2);
+  h.mod.index.stale = true;
+  h.mod.refresh(h.cx);
+  await h.flush();
+  assert.equal(h.execs.filter((e) => e.includes('ls-files')).length, 3);
+  const broken = await ready({ top: null });
+  broken.context.exec = async () => ({ code: 1, stdout: '', stderr: 'find: permission denied' });
+  await typeFilter(broken, 'x');
+  assert.match(strings(find(broken.mod.render(), 'files-list')), /^find: permission denied$/);
 });

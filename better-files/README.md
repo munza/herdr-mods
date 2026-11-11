@@ -5,6 +5,7 @@ A file browser for [Herdr Desktop](https://herdr.dev/) that opens files in the c
 ![Better Files](preview.png)
 
 - **Tree:** the focused pane's folder, named in the panel's title, with changed files coloured and lettered by what happened (green new, yellow edited, red gone or in conflict), and folders holding changes in yellow with a dot. It refreshes as files change.
+- **Filter:** type in the box under the title to find files and folders anywhere in the folder, including ones you haven't opened. A name holding the words matches, and words with a `/` match the path. Matches show as a tree under their folders. Click a file to open it, or a folder to open it in the tree. **Enter** opens the first matching file, and **Escape** or **×** clears the box. In a Git repository, files Git ignores are left out.
 - **Click** a file to show it in one shared centre tab, so browsing doesn't pile up tabs.
 - **Double-click**, or **Keep tab**, to keep that tab. The next click starts a new shared tab.
 - **The file view** is read-only, at your terminal's font size, and follows the file as it changes on disk. Only a real change touches it. Binary and unreadable files say so, and very long files are cut at 400,000 characters.
@@ -68,7 +69,7 @@ Add a `settings` block to the installed `mods/better-files/mod.json` with only w
 
 ## Limits
 
-A folder lists its first 500 entries, and the tree shows 5,000 rows. A file view can't report a selection or jump to a line, because Herdr's editor component offers neither, so you send whole files and an editor opens at the top. Listing a folder needs `sh`, so a Windows machine shows an error.
+A folder lists its first 500 entries, and the tree shows 5,000 rows. The filter shows 200 matches and searches up to 40,000 files; outside a Git repository it goes 12 folders deep (5 in a home folder or `/`) and skips `.git`, `node_modules`, `.venv`, `__pycache__`, `target`, `dist` and `.next`. A file view can't report a selection or jump to a line, because Herdr's editor component offers neither, so you send whole files and an editor opens at the top. Listing a folder needs `sh`, so a Windows machine shows an error.
 
 ## Development
 
