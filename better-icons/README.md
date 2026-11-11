@@ -19,6 +19,12 @@ Copy this prompt into your Herdr agent:
 
 [RECIPE.md](RECIPE.md) guides the install. It runs no programs, reaches no network, and reads only its own folder. There are no settings.
 
+## Limits
+
+- About 5 MB of icons. Only Better Files uses them so far.
+- A mod reads the table when it starts, so after an update reopen its panel or restart Herdr.
+- A symlinked mod folder loads code but not icons, so install by copying, as `sync.sh` does.
+
 ## Update
 
 Copy `mods/better-icons/` again. Mods that use it read the table when they start, so reopen their panels or restart Herdr.
