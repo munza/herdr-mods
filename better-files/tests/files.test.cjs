@@ -668,6 +668,15 @@ test('with a file tab focused from the start, the tree shows where the space\'s 
   assert.equal(alone.mod.root, '/made-here', 'a space with no terminal falls back to its own folder');
 });
 
+test('with a file focused beside a terminal, the tree follows that terminal, not one in an earlier tab', async () => {
+  const viewer = { pane: 'p3', tab: 'tab2', mod: 'better-files', cwd: null };
+  const h = await ready({ spaceFolder: '/made-here', focusOn: viewer });
+  h.live.panes.push({ pane: 'p2', tab: 'tab2', cwd: '/repo/src' });
+  h.mod.place = null;
+  h.tick();
+  assert.equal(h.mod.root, '/repo/src');
+});
+
 test('a picture\'s copy is named for what is in it, so a changed one, or one after a restart, never shows an old copy', async () => {
   const file = { path: '/repo/shot.PNG', root: '/repo', on: null };
   const shown = (h) => strings(find(h.mod.render(), 'viewer-image'));
