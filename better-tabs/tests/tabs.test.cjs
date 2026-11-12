@@ -640,7 +640,7 @@ test("a tab takes its agent's title, else the agent's name, a program's name, or
   const { tick } = naming(
     [unnamed("t1", 1), unnamed("t2", 2), unnamed("t3", 3), unnamed("t4", 4), unnamed("t5", 5), unnamed("t6", 6), unnamed("t7", 7)],
     [
-      { pane: "p1", tab: "t1", terminal: "x1", title: "Modes and layouts baseline", cwd: "/work/lantern", program: AGENT("Claude Code") },
+      { pane: "p1", tab: "t1", terminal: "x1", title: "Plan the trail map layout", cwd: "/work/lantern", program: AGENT("Claude Code") },
       { pane: "p2", tab: "t2", terminal: "x2", title: "Install trail maps | Work", cwd: "/home/sam/Work", program: AGENT("Codex") },
       { pane: "p3", tab: "t3", terminal: "x3", title: "π - lantern", cwd: "/work/lantern", program: AGENT("Pi") },
       { pane: "p4", tab: "t4", terminal: "x4", title: "lantern", cwd: "/work/lantern", program: AGENT("Codex") },
@@ -650,7 +650,7 @@ test("a tab takes its agent's title, else the agent's name, a program's name, or
     ],
   );
   assert.deepEqual(tick(), [
-    { id: "t1", name: "Modes and layouts baseline" },
+    { id: "t1", name: "Plan the trail map layout" },
     { id: "t2", name: "Install trail maps | Work" },
     { id: "t3", name: "π - lantern" },
     { id: "t4", name: "Codex" },
@@ -688,23 +688,23 @@ test("a name the person typed stays, and renaming the tab to nothing hands it ba
 
 test("a tab named before this mod knew it is taken over only if a pane could have named it", () => {
   const { tick } = naming(
-    [named("t1", 1, "Kis sync and check"), named("t2", 2, "Claude Code"), named("t3", 3, "server"), named("t4", 4, "estro.png")],
+    [named("t1", 1, "Sync the packing list"), named("t2", 2, "Claude Code"), named("t3", 3, "server"), named("t4", 4, "estro.png")],
     [
-      { pane: "p1", tab: "t1", terminal: "x1", title: "Kis sync and check, then push", cwd: "/work", program: AGENT("Claude Code") },
-      { pane: "p2", tab: "t2", terminal: "x2", title: "Modes and layouts baseline", cwd: "/work", program: AGENT("Claude Code") },
+      { pane: "p1", tab: "t1", terminal: "x1", title: "Sync the packing list, then push", cwd: "/work", program: AGENT("Claude Code") },
+      { pane: "p2", tab: "t2", terminal: "x2", title: "Plan the trail map layout", cwd: "/work", program: AGENT("Claude Code") },
       { pane: "p3", tab: "t3", terminal: "x3", title: "sam@desk:~/work/api", cwd: "/work/api", program: SHELL },
       { pane: "p4", tab: "t4", terminal: null, mod: "better-files", title: "estro.png" },
     ],
   );
-  assert.deepEqual(tick(), [{ id: "t2", name: "Modes and layouts baseline" }]);
+  assert.deepEqual(tick(), [{ id: "t2", name: "Plan the trail map layout" }]);
 });
 
 test("a tab adopted by its old title follows the topic from there", () => {
-  const pane = { pane: "p1", tab: "t1", terminal: "x1", title: "Kis sync and check", cwd: "/work", program: AGENT("Claude Code") };
-  const { tick } = naming([named("t1", 1, "Kis sync and check")], [pane]);
+  const pane = { pane: "p1", tab: "t1", terminal: "x1", title: "Sync the packing list", cwd: "/work", program: AGENT("Claude Code") };
+  const { tick } = naming([named("t1", 1, "Sync the packing list")], [pane]);
   assert.deepEqual(tick(), []);
-  pane.title = "Kis sync, then push";
-  assert.deepEqual(tick(), [{ id: "t1", name: "Kis sync, then push" }]);
+  pane.title = "Sync the packing list and push";
+  assert.deepEqual(tick(), [{ id: "t1", name: "Sync the packing list and push" }]);
 });
 
 test("a rename Herdr hasn't applied yet is waited for, not asked twice or taken for the person's", () => {
