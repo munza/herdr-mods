@@ -168,14 +168,14 @@ const LAYOUT = {
   floating: [{ id: "alerts", content: { mod: "lantern-alerts" }, edge: "bottom", align: "end" }],
   children: [
     { id: "sidebar", type: "block", content: { mod: "lantern-sidebar" } },
-    { id: "main", type: "block", content: { tab: "active", pane: { header: { content: { mod: "lantern-header" } } } } },
+    { id: "main", type: "block", content: { tab: "active", terminal_menu: "lantern-menu", pane: { header: { content: { mod: "lantern-header" } } } } },
   ],
 };
 const KEYS = { global: { "super-.": "mod.open:lantern-config", "super-e": "lantern-files.focus", "super-p": { command: "mod.open", args: { name: "lantern-picker" } } } };
 
 test("a mod is used by the layout, by a key, or neither", async () => {
   const { modUse } = await load();
-  for (const name of ["lantern-sidebar", "lantern-header", "lantern-alerts", "quiet-toast"]) assert.equal(modUse(name, LAYOUT, KEYS), "layout", name);
+  for (const name of ["lantern-sidebar", "lantern-header", "lantern-alerts", "quiet-toast", "lantern-menu"]) assert.equal(modUse(name, LAYOUT, KEYS), "layout", name);
   for (const name of ["lantern-config", "lantern-files", "lantern-picker"]) assert.equal(modUse(name, LAYOUT, KEYS), "key", name);
   assert.equal(modUse("lantern-icons", LAYOUT, KEYS), null);
   // A name that only starts like another's isn't it.
@@ -234,5 +234,6 @@ test("the Installed tabs and search: yours or Herdr's, matching the title or fol
   assert.deepEqual(names("herdr", ""), ["agents", "toast"]);
   assert.deepEqual(names("yours", "  ALERTS "), ["lantern-alerts"]);
   assert.deepEqual(names("yours", "lantern-al"), ["lantern-alerts"], "the folder name matches too");
+  assert.deepEqual(names("yours", "lantern al"), ["lantern-alerts"], "the title matches, case aside");
   assert.deepEqual(names("herdr", "lantern"), []);
 });

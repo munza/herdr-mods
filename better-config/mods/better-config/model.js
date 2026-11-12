@@ -231,7 +231,7 @@ export function editManifest(raw, field, value) {
 // a pane header, the root toast or terminal menu), "key" when keys.json opens it or runs one
 // of its commands, else null.
 export function modUse(name, layout, keys) {
-  // Arrays are objects too, so their items are walked the same way.
+  // Arrays are objects too, so here and in byKey their items are walked the same way.
   const inLayout = (node) => {
     if (!node || typeof node !== "object") return false;
     if (node.mod === name || node.toast === name || node.terminal_menu === name) return true;
@@ -240,7 +240,6 @@ export function modUse(name, layout, keys) {
   if (inLayout(layout)) return "layout";
   const byKey = (value) => {
     if (typeof value === "string") return value === `mod.open:${name}` || value.startsWith(`${name}.`);
-    if (Array.isArray(value)) return value.some(byKey);
     if (!value || typeof value !== "object") return false;
     if (value.command === "mod.open" && value.args?.name === name) return true;
     return Object.values(value).some(byKey);
