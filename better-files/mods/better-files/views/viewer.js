@@ -27,15 +27,27 @@ const LINE_COLUMNS = 6; // The number column and a margin, in the same units.
 const rowHeight = () => Math.round(codeSize() * 1.6);
 const REMOVED_ROW = 8;
 
-// $1 the file, $2 its copy, $3 the copy of what this tab showed before. No file name reaches
-// the script itself, and only the cache's own copies are ever removed.
 // Copies go in a hidden folder: saving any other file in a mod's folder makes Herdr reload
 // the mod, which threw the tree away on every picture opened. Herdr doesn't see a hidden file
-// change either, so a copy is never saved over: an out-of-date one exits STALE_COPY, and the
-// picture is copied again under a new name, the old copy going as the third argument.
+// change either, and keeps what it loaded under a name, so a name is never given to other
+// bytes: it's the picture's checksum and size, and a changed picture gets a new one.
+// $1 the file, $2 the cache folder, $3 the name's start, $4 its extension, $5 the copy this one
+// replaces, removed once the new one is in. Prints the copy's name. No file name reaches the
+// script itself, and only the cache's own copies are ever removed. A picture that changes
+// while it's copied exits BUSY and leaves nothing behind, to be copied on the next check.
 const CACHE = "mods/better-files/.cache";
-const STALE_COPY = 3;
-const COPY_IMAGE = `[ -z "$3" ] || rm -f -- "$3"; mkdir -p -- "$(dirname -- "$2")" && { cmp -s -- "$1" "$2" && exit 0; [ -e "$2" ] && exit ${STALE_COPY}; cp -- "$1" "$2"; }`;
+const BUSY = 75;
+const COPY_IMAGE = `sum=$(cksum < "$1") || exit 1
+name="$3-\${sum%% *}-\${sum##* }.$4"; copy="$2/$name"
+if [ ! -e "$copy" ]; then
+  mkdir -p -- "$2" && cp -- "$1" "$copy.part" || exit 1
+  [ "$(cksum < "$copy.part")" = "$sum" ] || { rm -f -- "$copy.part"; exit ${BUSY}; }
+  mv -f -- "$copy.part" "$copy" || exit 1
+fi
+[ -z "$5" ] || [ "$5" = "$copy" ] || rm -f -- "$5"
+printf %s "$name"`;
+const extension = (path) => path.split(".").pop().toLowerCase();
+const absolute = (copy) => (copy ? `${appHome()}/${copy}` : "");
 
 export const viewerMethods = {
   // What this tab shows: the registry, then what it was opened with, after a restart.
@@ -315,38 +327,27 @@ export const viewerMethods = {
   },
 
   // Herdr only loads images from under its own folder, so the file is shown through a copy
-  // in this mod's cache. Each file a tab shows, and each change to it, gets its own name.
+  // in this mod's cache, named for what's in it. The copy it replaces goes once it's in.
   readImage(cx) {
     const file = this.file;
     if (file.on || this.reading) return;
     if (this.imageFor !== file.path) {
       this.imageFor = file.path;
-      this.imageSerial = (this.imageSerial ?? 0) + 1;
-      this.imageOld = this.imageCopy;
-      const ext = file.path.split(".").pop().toLowerCase();
-      this.imageCopy = `${CACHE}/${this.viewerId}-${this.imageSerial}.${ext}`;
       this.imageShown = null;
     }
-    const copy = this.imageCopy;
-    const old = this.imageOld ? `${appHome()}/${this.imageOld}` : "";
-    this.imageOld = null;
     this.reading = true;
     cx.spawn(async (cx) => {
       const result = await exec(
         "sh",
-        ["-c", COPY_IMAGE, "copy-image", file.path, `${appHome()}/${copy}`, old],
+        ["-c", COPY_IMAGE, "copy-image", file.path, absolute(CACHE), this.viewerId, extension(file.path), absolute(this.imageCopy)],
         {},
       ).catch(() => null);
       this.reading = false;
-      if (this.file?.path !== file.path) return;
-      if (result?.code === STALE_COPY) {
-        this.imageOld = copy;
-        this.imageSerial += 1;
-        this.imageCopy = `${CACHE}/${this.viewerId}-${this.imageSerial}.${copy.split(".").pop()}`;
-        return this.readImage(cx);
-      }
-      const problem = result?.code === 0 ? null : "This file is no longer available.";
-      const shown = problem ? null : copy;
+      if (this.file?.path !== file.path || result?.code === BUSY) return;
+      const copy = result?.code === 0 ? `${CACHE}/${result.stdout.trim()}` : null;
+      if (copy) this.imageCopy = copy;
+      const problem = copy ? null : "This file is no longer available.";
+      const shown = copy;
       if (problem !== this.problem || shown !== this.imageShown) {
         this.problem = problem;
         this.imageShown = shown;
@@ -389,33 +390,30 @@ export const viewerMethods = {
   },
 
   // A Markdown file's pictures, copied into the cache the way the image viewer does, each
-  // under its own name for as long as the tab is open. Checked whenever the file is.
+  // with a name of its own for as long as the tab is open. Checked whenever the file is. The
+  // last copy stays on screen until the new one is in: a name shown before its file is there
+  // would stay blank, as Herdr doesn't see the hidden folder change.
   readMarkdownImages(cx) {
     const file = this.file;
     if (!file || file.on || !isMarkdown(file.path) || this.text === undefined) return;
     this.markdownCopies ??= new Map();
     this.markdownShown ??= new Map();
     this.markdownCopying ??= new Set();
-    this.markdownOld ??= new Map();
-    const name = (path) => `${CACHE}/${this.viewerId}-m${(this.markdownSerial = (this.markdownSerial ?? 0) + 1)}.${path.split(".").pop().toLowerCase()}`;
+    this.markdownSlots ??= new Map();
     for (const { path } of this.previewBlocks().filter((block) => block.type === "image")) {
       if (this.markdownCopying.has(path)) continue;
-      if (!this.markdownCopies.has(path)) this.markdownCopies.set(path, name(path));
-      const copy = this.markdownCopies.get(path);
-      const old = this.markdownOld.get(path);
-      this.markdownOld.delete(path);
+      if (!this.markdownSlots.has(path)) this.markdownSlots.set(path, this.markdownSlots.size + 1);
+      const start = `${this.viewerId}-m${this.markdownSlots.get(path)}`;
       this.markdownCopying.add(path);
       cx.spawn(async (cx) => {
-        const result = await exec("sh", ["-c", COPY_IMAGE, "copy-image", path, `${appHome()}/${copy}`, old ? `${appHome()}/${old}` : ""], {}).catch(() => null);
+        const old = this.markdownCopies.get(path);
+        const result = await exec("sh", ["-c", COPY_IMAGE, "copy-image", path, absolute(CACHE), start, extension(path), absolute(old)], {}).catch(() => null);
         this.markdownCopying.delete(path);
-        if (result?.code === STALE_COPY) {
-          this.markdownOld.set(path, copy);
-          this.markdownCopies.set(path, name(path));
-          return this.readMarkdownImages(cx);
-        }
-        const shown = result?.code === 0;
-        if (this.markdownShown.get(path) !== shown) {
-          this.markdownShown.set(path, shown);
+        if (result?.code === BUSY) return;
+        const copy = result?.code === 0 ? `${CACHE}/${result.stdout.trim()}` : null;
+        if (copy) this.markdownCopies.set(path, copy);
+        if (this.markdownShown.get(path) !== Boolean(copy) || copy !== old) {
+          this.markdownShown.set(path, Boolean(copy));
           cx.notify();
         }
       });

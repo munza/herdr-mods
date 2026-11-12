@@ -16,14 +16,14 @@ const source = FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8'))
 
 const TREE = { '/repo': [['d', 'src'], ['f', 'b.md'], ['f', 'a.md']], '/repo/src': [['f', 'main.go']] };
 
-function world({ spaceFolder = '/repo', focusOn = null, copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
+function world({ pictures = {}, spaceFolder = '/repo', focusOn = null, copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
   const store = new Map(Object.entries(sharedInit));
   const ran = [], execs = [], sent = [], clipboard = [], closed = [], overlays = [], urls = [];
-  const live = { layout, panes: [{ pane: 'p1', tab: 'tab1', cwd }, ...(focusOn ? [focusOn] : [])], focused: focusOn ? { space: 's', tab: focusOn.tab, pane: focusOn.pane, cwd: null } : { space: 's', tab: 'tab1', pane: 'p1', cwd }, agents, texts: { ...texts } };
+  const live = { pictures: { ...pictures }, layout, panes: [{ pane: 'p1', tab: 'tab1', cwd }, ...(focusOn ? [focusOn] : [])], focused: focusOn ? { space: 's', tab: focusOn.tab, pane: focusOn.pane, cwd: null } : { space: 's', tab: 'tab1', pane: 'p1', cwd }, agents, texts: { ...texts } };
   const timers = [];
   const pending = [];
   const cx = {
-    focus_handle: () => ({ focus() {} }), stop_propagation() {}, notify() {},
+    focus_handle: () => ({ focus() {} }), stop_propagation() {}, notify() { cx.notified = (cx.notified ?? 0) + 1; },
     spawn(fn) { const p = fn(cx); pending.push(p); return p; },
     timer: { every: (_ms, fn) => timers.push(fn), after() {} },
     write_to_clipboard: (text) => clipboard.push(text),
@@ -73,7 +73,7 @@ function world({ spaceFolder = '/repo', focusOn = null, copyImage, diff = '', la
     hc: async (args) => { sent.push(args); return hcResult ?? { code: 0, stdout: '', stderr: '' }; },
     exec: async (bin, args, options) => {
       execs.push([bin, ...args]);
-      if (bin === 'sh' && args[2] === 'copy-image') return (typeof copyImage === 'function' ? copyImage(args) : copyImage) ?? { code: 0 };
+      if (bin === 'sh' && args[2] === 'copy-image') return (typeof copyImage === 'function' ? copyImage(args) : copyImage) ?? { code: 0, stdout: `${args[5]}-${live.pictures[args[3]] ?? '111-3'}.${args[6]}` };
       if (bin === 'sh') return { code: 0, stdout: (tree[args.at(-1)] ?? []).flatMap(([k, n]) => [k, n, '']).join('\0').replace(/\0\0/g, '\0') };
       if (bin === 'mdfind') return { code: 0, stdout: editors.some((b) => args[0].includes(b)) ? '/Apps/It.app\n' : '' };
       if (bin === 'git' && args[0] === 'rev-parse') return top ? { code: 0, stdout: `${top}\n` } : { code: 128, stdout: '' };
@@ -369,17 +369,17 @@ test('the setting can use Herdr\'s own editor instead', async () => {
 test('an image shows as a picture, with no text read and no gutter', async () => {
   const file = { path: '/repo/shot.PNG', root: '/repo', on: null };
   const h = await ready({ mode: 'viewer', viewer: 'v', file, status: ' M shot.PNG\n', diff: '@@ -1 +1 @@\n' });
-  assert.match(strings(find(h.mod.render(), 'viewer-image')), /image:mods\/better-files\/\.cache\/v-1\.png/);
+  assert.match(strings(find(h.mod.render(), 'viewer-image')), /^image:mods\/better-files\/\.cache\/v-111-3\.png$/);
   assert.equal(h.context.lastCode, undefined);
   const copy = h.execs.find((e) => e[1] === '-c' && e[3] === 'copy-image');
-  assert.deepEqual(JSON.parse(JSON.stringify(copy.slice(4))), ['/repo/shot.PNG', '/app/mods/better-files/.cache/v-1.png', ''], 'names go as arguments');
+  assert.deepEqual(JSON.parse(JSON.stringify(copy.slice(4))), ['/repo/shot.PNG', '/app/mods/better-files/.cache', 'v', 'png', ''], 'names go as arguments');
   h.store.set('better-files.viewers', { v: { file: { ...file, path: '/repo/other.jpg' }, tab: 'tab1' } });
   h.tick();
   await h.flush();
-  assert.match(strings(find(h.mod.render(), 'viewer-image')), /\.cache\/v-2\.jpg/, 'a new file, a new name');
-  assert.equal(h.execs.filter((e) => e[3] === 'copy-image').at(-1)[6], '/app/mods/better-files/.cache/v-1.png', 'the old copy goes');
+  assert.match(strings(find(h.mod.render(), 'viewer-image')), /^image:mods\/better-files\/\.cache\/v-111-3\.jpg$/, 'a new file, a new name');
+  assert.equal(h.execs.filter((e) => e[3] === 'copy-image').at(-1)[8], '/app/mods/better-files/.cache/v-111-3.png', 'the old copy goes');
   await h.mod.close();
-  assert.deepEqual(JSON.parse(JSON.stringify(h.execs.at(-1))), ['rm', '-f', '--', '/app/mods/better-files/.cache/v-2.jpg']);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.execs.at(-1))), ['rm', '-f', '--', '/app/mods/better-files/.cache/v-111-3.jpg']);
   const gone = await ready({ mode: 'viewer', viewer: 'v', file, copyImage: { code: 1 } });
   assert.match(strings(gone.mod.render()), /no longer available/);
   assert.equal(markBars(h).length, 0);
@@ -555,7 +555,7 @@ test('every icon is used, every used icon exists, and nothing here can write a f
   for (const icon of icons) assert.ok(code.includes(`"${icon}"`), `unused icon ${icon}`);
   for (const [, name] of code.matchAll(/(?:icon: |Icon\()"([a-z-]+)"/g)) assert.ok(icons.includes(name), `missing icon ${name}`);
   assert.doesNotMatch(code, /writeTextFile|writeFile|readonly: false/);
-  assert.equal((code.match(/\brm\b/g) ?? []).length, 2, 'rm only ever touches the cache');
+  assert.equal((code.match(/\brm\b/g) ?? []).length, 3, 'rm only ever touches the cache: a replaced copy, a half-made one, and a closing tab\'s');
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'mod.json'))).title, 'Better Files');
   assert.doesNotMatch(code, /panel-body|better-tabs|estro/i);
 });
@@ -625,14 +625,14 @@ test('a Markdown file opens in Preview; the toggle switches to Code and back, re
 test('the preview follows the file on disk, and shows its pictures through the cache', async () => {
   const h = await mdWorld();
   const copy = h.execs.find((e) => e[3] === 'copy-image');
-  assert.deepEqual(JSON.parse(JSON.stringify(copy.slice(4))), ['/repo/docs/pics/shot.PNG', '/app/mods/better-files/.cache/v-m1.png', '']);
-  assert.match(strings(h.mod.render()), /image:mods\/better-files\/\.cache\/v-m1\.png/);
+  assert.deepEqual(JSON.parse(JSON.stringify(copy.slice(4))), ['/repo/docs/pics/shot.PNG', '/app/mods/better-files/.cache', 'v-m1', 'png', '']);
+  assert.match(strings(h.mod.render()), /image:mods\/better-files\/\.cache\/v-m1-111-3\.png/);
   h.live.texts['/repo/docs/guide.md'] = '# Changed';
   h.tick();
   await h.flush();
   assert.match(strings(find(h.mod.render(), 'viewer-preview')), /md:# Changed/);
   await h.mod.close();
-  assert.deepEqual(JSON.parse(JSON.stringify(h.execs.at(-1))), ['rm', '-f', '--', '/app/mods/better-files/.cache/v-m1.png']);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.execs.at(-1))), ['rm', '-f', '--', '/app/mods/better-files/.cache/v-m1-111-3.png']);
   const gone = await mdWorld({ copyImage: { code: 1 } });
   assert.match(strings(gone.mod.render()), /Shot isn't available/);
   const far = await mdWorld({ file: { ...MD, on: 'box' } });
@@ -668,46 +668,79 @@ test('with a file tab focused from the start, the tree shows where the space\'s 
   assert.equal(alone.mod.root, '/made-here', 'a space with no terminal falls back to its own folder');
 });
 
-test('a picture is copied where Herdr doesn\'t watch, and a changed one gets a new name, the old copy going', async () => {
-  let changed = false;
-  const copyImage = (args) => (changed && /v-1\.png$|v-m1\.png$/.test(args[4]) ? { code: 3 } : { code: 0 });
+test('a picture\'s copy is named for what is in it, so a changed one, or one after a restart, never shows an old copy', async () => {
   const file = { path: '/repo/shot.PNG', root: '/repo', on: null };
-  const h = await ready({ mode: 'viewer', viewer: 'v', file, copyImage });
-  assert.match(strings(find(h.mod.render(), 'viewer-image')), /^image:mods\/better-files\/\.cache\/v-1\.png$/);
-  changed = true;
+  const shown = (h) => strings(find(h.mod.render(), 'viewer-image'));
+  const h = await ready({ mode: 'viewer', viewer: 'v', file });
+  assert.match(shown(h), /^image:mods\/better-files\/\.cache\/v-111-3\.png$/);
+  h.live.pictures['/repo/shot.PNG'] = '222-4';
   h.tick();
   await h.flush();
-  assert.match(strings(find(h.mod.render(), 'viewer-image')), /^image:mods\/better-files\/\.cache\/v-2\.png$/);
-  const last = h.execs.filter((e) => e[3] === 'copy-image').at(-1);
-  assert.deepEqual(JSON.parse(JSON.stringify(last.slice(4))), ['/repo/shot.PNG', '/app/mods/better-files/.cache/v-2.png', '/app/mods/better-files/.cache/v-1.png']);
-  changed = false;
-  const md = await mdWorld({ copyImage });
-  assert.match(strings(md.mod.render()), /image:mods\/better-files\/\.cache\/v-m1\.png/);
-  changed = true;
-  md.live.texts['/repo/docs/guide.md'] += ' ';
-  md.tick();
-  await md.flush();
-  assert.match(strings(md.mod.render()), /image:mods\/better-files\/\.cache\/v-m2\.png/);
-  assert.deepEqual(JSON.parse(JSON.stringify(md.execs.filter((e) => e[3] === 'copy-image').at(-1).slice(4))), ['/repo/docs/pics/shot.PNG', '/app/mods/better-files/.cache/v-m2.png', '/app/mods/better-files/.cache/v-m1.png']);
+  assert.match(shown(h), /^image:mods\/better-files\/\.cache\/v-222-4\.png$/);
+  assert.equal(h.execs.filter((e) => e[3] === 'copy-image').at(-1)[8], '/app/mods/better-files/.cache/v-111-3.png', 'the old copy goes');
+  const again = await ready({ mode: 'viewer', viewer: 'v', file, pictures: { '/repo/shot.PNG': '333-5' } });
+  assert.match(shown(again), /^image:mods\/better-files\/\.cache\/v-333-5\.png$/, 'a restarted tab with another picture never reuses a name');
+  const busy = await ready({ mode: 'viewer', viewer: 'v', file });
+  busy.context.exec = async () => ({ code: 75, stdout: '' });
+  busy.tick();
+  await busy.flush();
+  assert.match(shown(busy), /^image:mods\/better-files\/\.cache\/v-111-3\.png$/, 'a picture still being written keeps the last copy');
 });
 
-test('the copy script copies once, says when a copy is out of date, and removes the old one', async () => {
+test('a Markdown picture keeps its last copy on screen until the new one is there', async () => {
+  let release;
+  const h = await mdWorld();
+  assert.match(strings(h.mod.render()), /image:mods\/better-files\/\.cache\/v-m1-111-3\.png/);
+  const exec = h.context.exec;
+  h.context.exec = (bin, args, o) => (args[2] === 'copy-image' ? new Promise((done) => (release = () => done({ code: 0, stdout: 'v-m1-222-4.png' }))) : exec(bin, args, o));
+  h.live.texts['/repo/docs/guide.md'] += ' ';
+  h.tick();
+  await h.flush();
+  assert.match(strings(h.mod.render()), /image:mods\/better-files\/\.cache\/v-m1-111-3\.png/, 'not a name with nothing there yet');
+  const before = h.cx.notified;
+  release();
+  await h.flush();
+  assert.ok(h.cx.notified > before, 'the new copy is drawn');
+  assert.match(strings(h.mod.render()), /image:mods\/better-files\/\.cache\/v-m1-222-4\.png/);
+  assert.doesNotMatch(strings(h.mod.render()), /v-m1-111-3/);
+  h.context.exec = (bin, args, o) => (args[2] === 'copy-image' ? Promise.resolve({ code: 75, stdout: '' }) : exec(bin, args, o));
+  h.live.texts['/repo/docs/guide.md'] += ' ';
+  h.tick();
+  await h.flush();
+  assert.match(strings(h.mod.render()), /image:mods\/better-files\/\.cache\/v-m1-222-4\.png/, 'a picture still being written keeps the last copy');
+});
+
+test('the copy script names a copy by its checksum, copies once, and removes the copy it replaces', async () => {
   const { context: m } = await ready();
   const os = require('node:os');
   const { spawnSync } = require('node:child_process');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bf-copy-'));
-  const run = (...args) => spawnSync('sh', ['-c', m.COPY_IMAGE, 'copy-image', ...args]).status;
-  const src = path.join(dir, 'a.png'), dest = path.join(dir, '.cache/v-1.png'), next = path.join(dir, '.cache/v-2.png');
+  const cache = path.join(dir, '.cache');
+  const run = (args, env) => spawnSync('sh', ['-c', m.COPY_IMAGE, 'copy-image', ...args], { encoding: 'utf8', env: env ?? process.env });
+  const src = path.join(dir, 'a.png');
   fs.writeFileSync(src, 'one');
-  assert.equal(run(src, dest, ''), 0);
-  assert.equal(fs.readFileSync(dest, 'utf8'), 'one');
-  assert.equal(run(src, dest, ''), 0, 'the same picture again');
-  fs.writeFileSync(src, 'two');
-  assert.equal(run(src, dest, ''), 3, 'a changed picture');
-  assert.equal(fs.readFileSync(dest, 'utf8'), 'one', 'the shown copy is left alone');
-  assert.equal(run(src, next, dest), 0);
-  assert.equal(fs.readFileSync(next, 'utf8'), 'two');
-  assert.equal(fs.existsSync(dest), false, 'the old copy goes');
-  assert.notEqual(run(path.join(dir, 'gone.png'), path.join(dir, '.cache/v-3.png'), ''), 0);
+  const first = run([src, cache, 'v', 'png', '']);
+  assert.equal(first.status, 0);
+  assert.match(first.stdout, /^v-\d+-3\.png$/);
+  assert.equal(fs.readFileSync(path.join(cache, first.stdout), 'utf8'), 'one');
+  const kept = fs.statSync(path.join(cache, first.stdout)).ino;
+  assert.equal(run([src, cache, 'v', 'png', path.join(cache, first.stdout)]).stdout, first.stdout, 'the same picture keeps its name and its copy');
+  assert.equal(fs.statSync(path.join(cache, first.stdout)).ino, kept, 'not copied again');
+  fs.writeFileSync(src, 'two!');
+  const second = run([src, cache, 'v', 'png', path.join(cache, first.stdout)]);
+  assert.equal(second.status, 0);
+  assert.match(second.stdout, /^v-\d+-4\.png$/);
+  assert.equal(fs.readFileSync(path.join(cache, second.stdout), 'utf8'), 'two!');
+  assert.equal(fs.existsSync(path.join(cache, first.stdout)), false, 'the replaced copy goes');
+  const gone = run([path.join(dir, 'gone.png'), cache, 'v', 'png', '']);
+  assert.notEqual(gone.status, 0);
+  assert.equal(gone.stdout, '');
+  const bin = path.join(dir, 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'cp'), '#!/bin/sh\nprintf changed > "$3"\n', { mode: 0o755 });
+  fs.writeFileSync(src, 'three');
+  const busy = run([src, cache, 'v', 'png', path.join(cache, second.stdout)], { ...process.env, PATH: `${bin}:${process.env.PATH}` });
+  assert.equal(busy.status, 75, 'a picture that changed while it was copied');
+  assert.deepEqual(fs.readdirSync(cache), [second.stdout], 'nothing half-copied is left, and the shown copy stays');
   fs.rmSync(dir, { recursive: true });
 });
