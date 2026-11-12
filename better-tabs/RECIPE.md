@@ -18,6 +18,8 @@ The ⋮ menu is a 240px popup on `popover` with 5px padding and 32px rows, listi
 
 A press becomes a drag only after 400ms and 12px of movement, for tabs and toolbar buttons alike; anything less is a click. Nothing moves until release. Leaving the bar cancels a drag. Dropping a tab on + puts it last. A tab's click selects it, double-click renames it through `tab.rename`, and right-click opens the shipped `menu` mod. `tab.move` takes a one-based index.
 
+A tab nobody named (`named: false`) takes a name once, through `tab.rename`: from its panes, an agent's `program.name` beats another program's, which beats a shell's folder (its last part, `~` at home, `/` at the root), and the first pane breaks a tie. A pane's title is never used, since agents put a spinner in it. A mod's pane has no program and names nothing. The name waits until the tab has had something to name it by for 2 seconds, since a new terminal can show its shell before its program starts, and is asked for again if Herdr hasn't applied it 2 seconds later. Once named, the tab counts as named, so it's never renamed again; renaming it to nothing hands it back. The bar's 300ms timer does it, never render, and `settings.tabs.auto_name: false` turns it off.
+
 Dropping a toolbar button on ⋮ hides it. In the menu, clicking a row runs its action, dragging out closes the menu so it can be dropped on the toolbar, and the pin restores it at the front. Buttons that don't fit the width also go in the menu. The arrangement is saved by button ID, per layout, in `shared("better-tabs.toolbar")`.
 
 Tabs use a wrapping flex row whose measured height resizes the bar with `layout.resize` on `tabs-row` if it exists, else `tabs`. Measured sizes are scaled by zoom, so divide by `settings().zoom`.
@@ -28,7 +30,7 @@ Actions are `panel` (`container`, `stack`, `target`) and `command` (`name`, `arg
 
 ## Built from
 
-One folder, `mods/better-tabs/`: `main.js`, `settings.js`, `mod.json` (`place: none`), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `actions/` (`engine.js`, `toolbar.js`), `views/` (`tab-bar.js`, `menu.js`, `drags.js`, `arrangement.js`, `panel-memory.js`, `ui.js`) and `icons/`. It uses `div`, `svg`, `image`, flex containers and popups through `openOverlay`. It runs no programs. Mod tabs show the icon in `shared("mod-icons")[mod]`. On macOS it leaves room for the traffic lights when the sidebar doesn't.
+One folder, `mods/better-tabs/`: `main.js`, `settings.js`, `mod.json` (`place: none`), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `actions/` (`engine.js`, `toolbar.js`, `names.js`), `views/` (`tab-bar.js`, `menu.js`, `drags.js`, `arrangement.js`, `panel-memory.js`, `ui.js`) and `icons/`. It uses `div`, `svg`, `image`, flex containers and popups through `openOverlay`. It runs no programs. Mod tabs show the icon in `shared("mod-icons")[mod]`. On macOS it leaves room for the traffic lights when the sidebar doesn't.
 
 ## Watch out
 
@@ -47,3 +49,4 @@ Copying the folder is not enough: shipped layouts are read-only, so point a tabs
 - Dragging shows the line between tabs and moves on release; leaving the bar cancels.
 - Many tabs wrap, the bar grows, + stays after the last tab, and the bar shrinks back when tabs close.
 - Dropping a button on ⋮ hides it, and the pin or a drag brings it back, surviving a restart.
+- A new Claude Code tab is named Claude Code, a shell tab its folder, and a tab you named keeps its name.
