@@ -35,13 +35,17 @@ export function indexOf(stdout) {
 }
 
 // A file or folder matches when its name holds the query, or, for a query with a /, its path.
-// Names that start with the query come first, then shorter paths.
-export function findMatches(index, query) {
+// Names that start with the query come first, then shorter paths. With dotfiles off, nothing
+// whose path has a part starting with a dot matches.
+export const isHidden = (path) => path.split("/").some((part) => part.startsWith("."));
+
+export function findMatches(index, query, { dotfiles = true } = {}) {
   const wanted = String(query ?? "").trim().toLowerCase();
   if (!wanted || !index) return { hits: [], more: false };
   const byPath = wanted.includes("/");
   const hits = [];
   const consider = (path, dir) => {
+    if (!dotfiles && isHidden(path)) return;
     const at = (byPath ? path : baseName(path)).toLowerCase().indexOf(wanted);
     if (at !== -1) hits.push({ path, dir, early: at === 0 });
   };

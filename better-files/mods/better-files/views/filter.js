@@ -15,31 +15,38 @@ export const filterMethods = {
     cx.notify();
   },
 
-  // Worked out again only when the words or the list of files change, not on every redraw.
+  // Worked out again only when the words, the list of files or the dotfiles choice change,
+  // not on every redraw.
   matches() {
     const text = this.filterText();
     const index = this.index?.key === this.key ? this.index : null;
-    if (this.matched?.index !== index || this.matched?.text !== text) {
-      const found = findMatches(index, text);
-      this.matched = { index, text, ...found, rows: matchRows(found.hits) };
+    const { dotfiles } = this;
+    if (this.matched?.index !== index || this.matched?.text !== text || this.matched?.dotfiles !== dotfiles) {
+      const found = findMatches(index, text, { dotfiles });
+      this.matched = { index, text, dotfiles, ...found, rows: matchRows(found.hits) };
     }
     return this.matched;
   },
 
-  // Enter opens the first file that matches, as a click would.
+  // Enter opens the marked match, else the first file that matches, as a click would.
   openFirstMatch(cx) {
+    const row = this.matches().rows.find((r) => r.relative === this.cursor);
+    if (row) return this.activateRow(row, cx);
     const hit = this.matches().hits.find((h) => !h.dir);
     if (hit) this.openFile(this.fileOf(hit.path), cx);
   },
 
-  // A folder picked from the matches opens in the tree, with the filter cleared. Its folders
-  // are read here, as a click on a chevron does: a refresh skips a tree that is still loading.
+  // A folder picked from the matches opens in the tree, with the filter cleared and the tree
+  // holding the keyboard on it. Its folders are read here, as a click on a chevron does: a
+  // refresh skips a tree that is still loading.
   revealFolder(relative, cx) {
     const { root, on, key } = this;
     const folders = foldersTo(relative, true);
     for (const folder of folders) this.folders.add(folder);
     this.scrollTo = relative;
     this.clearFilter(cx);
+    this.cursor = relative;
+    this.treeFocus.focus();
     cx.spawn(async (cx) => {
       try {
         for (const folder of folders) await this.loadFolder(folder, root, on, key);
@@ -62,16 +69,19 @@ export const filterMethods = {
       .border_b(1)
       .border_color(t.border)
       .on_key_down((event, cx) => {
-        if (event.key !== "escape" || !text) return;
+        if (!text) return;
+        if (event.keystroke === "escape") this.clearFilter(cx);
+        else if (event.keystroke === "down" || event.keystroke === "up") this.moveCursor(event.keystroke === "down" ? 1 : -1, cx);
+        else return;
         cx.stop_propagation();
-        this.clearFilter(cx);
       })
       .child(TextField({ id: "files-filter-input", state: this.filter }))
       .when(Boolean(text), (el) =>
         el.child(
           IconButton({ id: "files-filter-clear", icon: "close", label: "Clear filter", small: true, onClick: (cx) => this.clearFilter(cx) }),
         ),
-      );
+      )
+      .children(this.toolButtons());
   },
 
   matchesView(body, t) {

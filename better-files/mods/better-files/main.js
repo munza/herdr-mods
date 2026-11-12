@@ -9,7 +9,8 @@
 //   actions/outside.js    code editors, Finder
 //   actions/agents.js     sending a file to an agent
 //   actions/menus.js      popup menus
-//   views/tree.js, filter.js, viewer.js, context-menu.js   the drawing
+//   views/tree.js, filter.js, tools.js, viewer.js, context-menu.js   the drawing
+//   views/keys.js         the tree from the keyboard
 // files/model.js says what the data means; views/ui.js holds every look.
 import { View } from "gpui-kit";
 import { InputState, ScrollHandle, TextareaState } from "gpui-base";
@@ -22,6 +23,8 @@ import { agentMethods } from "./actions/agents.js";
 import { menuMethods } from "./actions/menus.js";
 import { treeMethods } from "./views/tree.js";
 import { filterMethods } from "./views/filter.js";
+import { savedDotfiles, toolMethods } from "./views/tools.js";
+import { keyMethods } from "./views/keys.js";
 import { viewerMethods } from "./views/viewer.js";
 import { contextMenuMethods } from "./views/context-menu.js";
 
@@ -87,11 +90,23 @@ class BetterFiles extends View {
     this.editor.on("change", (_e, cx) => cx.notify());
     this.filter = InputState.new({ placeholder: "Filter files" });
     this.filter.on("change", (_e, cx) => {
+      // New words, new matches: the arrows start again from the top.
+      this.cursor = null;
       this.ensureIndex(cx);
       cx.notify();
     });
     this.filter.on("submit", (_e, cx) => this.openFirstMatch(cx));
+    this.filter.on("focus", (_e, cx) => {
+      this.filterFocused = true;
+      cx.notify();
+    });
+    this.filter.on("blur", (_e, cx) => {
+      this.filterFocused = false;
+      cx.notify();
+    });
     this.treeScroll = ScrollHandle.new();
+    this.treeFocus = cx.focus_handle();
+    this.dotfiles = savedDotfiles();
     this.refresh(cx);
     this.findBetterChanges(cx);
     this.findNewAgents(this.on, cx);
@@ -104,7 +119,12 @@ class BetterFiles extends View {
       cx.timer.every(Math.max(1000, duration(settings.refresh.tree, 10000)), (cx) => this.refresh(cx));
     });
     cx.spawn(async (cx) => {
-      for (;;) if ((await nextCommand()) === "refresh") this.refresh(cx);
+      // "focus" gives the tree the keyboard, for a key bound to better-files:focus.
+      for (;;) {
+        const command = await nextCommand();
+        if (command === "refresh") this.refresh(cx);
+        else if (command === "focus") this.focusTree(cx);
+      }
     });
   }
 
@@ -143,6 +163,8 @@ Object.assign(
   menuMethods,
   treeMethods,
   filterMethods,
+  toolMethods,
+  keyMethods,
   viewerMethods,
   contextMenuMethods,
 );
