@@ -568,6 +568,12 @@ test('the status parser and helpers', async () => {
   assert.equal(m.languageOf('Makefile'), 'txt');
 });
 
+test('the suggested key focuses the tree through a command the sidebar handles', () => {
+  const keys = JSON.parse(fs.readFileSync(path.join(__dirname, '../keys.json'), 'utf8'));
+  assert.deepEqual(keys, { global: { 'cmd-shift-e': 'better-files.focus' } });
+  assert.match(fs.readFileSync(path.join(root, 'main.js'), 'utf8'), /command === "focus"\) this\.focusTree\(cx\)/);
+});
+
 test('every icon is used, every used icon exists, and nothing here can write a file', () => {
   const code = FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
   const icons = fs.readdirSync(path.join(root, 'icons')).map((f) => f.replace('.svg', ''));
