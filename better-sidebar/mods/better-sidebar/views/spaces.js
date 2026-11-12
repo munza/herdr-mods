@@ -346,13 +346,11 @@ export class Spaces {
   // The rows, under a header per machine once one isn't this computer.
   grouped(t, collapsed) {
     const rows = this.ordered();
-    // Each space's own row, so the list can scroll to the shown one.
+    // Each space's rows, its own and those under it, so the list can scroll to the shown one.
     this.drawn = {};
     // `under`, set by the lists view, adds rows beneath a space: its agents.
-    const draw = (r) => {
-      const own = (this.drawn[r.w.id] = collapsed ? this.compact(r, t) : this.row(r, t));
-      return collapsed ? [own] : [own, ...(this.under?.(r) ?? [])];
-    };
+    const draw = (r) =>
+      (this.drawn[r.w.id] = collapsed ? [this.compact(r, t)] : [this.row(r, t), ...(this.under?.(r) ?? [])]);
     const remote = [
       ...new Set([
         ...rows.map((r) => r.w.machine).filter(Boolean),
@@ -808,13 +806,14 @@ export class Spaces {
       .children(rows);
   }
 
-  // Once per change of the shown space: scroll its row into view. A row already on screen
-  // stays put, so this never fights your own scrolling. A space that isn't listed, as in a
-  // folded machine, waits until it is.
+  // Once per change of the shown space: scroll the last row under it into view, which brings
+  // the space's own row and its tabs on screen too. A row already on screen stays put, so this
+  // never fights your own scrolling. A space that isn't listed, as in a folded machine, waits
+  // until it is.
   revealShown(rows) {
     const shown = spaces().find((s) => s.active)?.id ?? null;
     if (shown === this.scrolledTo) return;
-    const at = rows.indexOf(this.drawn[shown]);
+    const at = rows.indexOf(this.drawn[shown]?.at(-1));
     if (at === -1) return;
     this.scrolledTo = shown;
     this.listScroll.scroll_to_item(at);

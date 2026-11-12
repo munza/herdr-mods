@@ -639,17 +639,17 @@ test("the list scrolls to the shown space when it changes, and only then", () =>
   assert.equal(find(h.mod.body(h.colors, false), "spaces-list").attributes.track_scroll.length, 1);
 });
 
-test("the row it scrolls to counts the rows drawn above it", () => {
+test("it scrolls to the last row under the space, so the space and its tabs show, counting the rows above", () => {
   const { h, show } = scrolling();
   // As in the lists view: pinned agents on top, and each space's tabs under it.
   h.mod.above = () => ["pinned agent"];
   h.mod.under = ({ w }) => [`${w.id} tab 1`, `${w.id} tab 2`];
   show("api");
   h.mod.body(h.colors, false);
-  assert.deepEqual(h.scrolled, [7]);
+  assert.deepEqual(h.scrolled, [9], "api's second tab: 1 pinned + 3 rows each for trails and maps + api + 2 tabs");
   show("notes");
   h.mod.body(h.colors, true);
-  assert.deepEqual(h.scrolled, [7, 4], "the rail has no rows under a space");
+  assert.deepEqual(h.scrolled, [9, 4], "the rail has no rows under a space");
 });
 
 test("a shown space that isn't listed, as in a folded machine, doesn't scroll", () => {
