@@ -1,6 +1,6 @@
 # Herdr Mods
 
-Mods for [Herdr Desktop](https://herdr.dev/) built on Herdr's own mod API: a Git panel, a file browser, a sidebar, a tab bar, a settings dialog, PR and Linear panels, Mac automation for agents, and staged agent runs. Install one, or all of them as the [Estro](#estro-all-of-them-in-one-layout) layout.
+Mods for [Herdr Desktop](https://herdr.dev/) built on Herdr's own mod API: a Git panel, a file browser, a sidebar, a tab bar, a settings dialog, and PR and Linear panels. Install one, or all of them as the [Estro](#estro-all-of-them-in-one-layout) layout.
 
 ![Better Sidebar, Better Tabs, Better Files, Better Changes and Better Config together in Herdr](docs/gifs/better-mods.gif)
 
@@ -13,7 +13,7 @@ Site: [munza.github.io/herdr-mods](https://munza.github.io/herdr-mods/)
 - **One folder per mod.** Every mod folder holds `mods/<name>/` (the code, `mod.json`, and `mod.schema.json`), `tests/`, a `README.md` for people and a `RECIPE.md` for the agent that installs it. Nothing reaches into another mod's folder.
 - **Settings described once.** `mod.schema.json` describes every setting: title, description, type, default and limits. The code keeps its defaults in one `DEFAULT_SETTINGS`, and a test checks that each mod's schema, its `mod.json` and its code's defaults agree. Your installed `mod.json` holds only what you changed.
 - **Layout-driven.** A block's `props` choose what a mod draws, so one mod can fill several blocks. Better Sidebar draws the spaces list, the agents list, both under tabs, a footer or a panel toggle depending on `props.view`; Better Changes draws its sidebar, a diff tab or a pane header. You place the pieces where you want them in your own layout.
-- **Plain tooling.** Tests are `node --test`, with no packages to install. The four mods that need native work (Branch PR, Branch Issue, Hands, Factory) have a small Go helper with its own tests, built on your machine at install. No Python, no global installs.
+- **Plain tooling.** Tests are `node --test`, with no packages to install. The two mods that need native work (Branch PR, Branch Issue) have a small Go helper with its own tests, built on your machine at install. No Python, no global installs.
 
 ## Install
 
@@ -47,16 +47,9 @@ Your PR and your Linear issue, next to the branch.
 - [Branch PR](branch-pr/README.md) (`branch-pr`): GitHub PR panel that shows what stands between a PR and a merge, lists its files with diffs, hands failures and comments to agents, and merges when ready. Needs Go 1.23+ and `gh`.
 - [Branch Issue](branch-issue/README.md) (`branch-issue`): Linear panel that follows the branch, edits state, priority and assignee, and opens a worktree with an agent holding the issue. Needs Go 1.23+ and a Linear API key.
 
-### Automation
-
-Agent tools beyond the window: Mac automation and staged runs.
-
-- [Hands](hands/README.md) (`hands`): a `hands` CLI that lets agents read and drive any Mac app through its accessibility tree, take screenshots and record the screen, plus a panel of its captures and actions. Needs Go 1.23+ and macOS.
-- [Factory](factory/README.md) (`factory`): staged agent runs, such as developer then reviewer, shown as a tree of live sessions with findings by severity and review loops. Needs Go 1.23+ and Claude Code.
-
 ## Estro: all of them in one layout
 
-[Estro](estro/RECIPE.md) puts every mod in one window for directing agents: spaces and agents on the left, the session in the middle, and Files, Changes, PRs, Issues, Hands and Factory in a panel on the right. One prompt installs the layout and all nine mods:
+[Estro](estro/RECIPE.md) puts every mod in one window for directing agents: spaces and agents on the left, the session in the middle, and Files, Changes, PRs and Issues in a panel on the right. One prompt installs the layout and all seven mods:
 
 ```text
 Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/munza/herdr-mods/tree/main/estro

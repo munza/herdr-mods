@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Herdr Mods</title>
-<meta name="description" content="Mods for Herdr Desktop built on Herdr's own mod API: Git, files, sidebar, tabs, settings, PRs, Linear, Mac automation and staged agent runs.">
+<meta name="description" content="Mods for Herdr Desktop built on Herdr's own mod API: Git, files, sidebar, tabs, settings, PRs and Linear.">
 <meta name="theme-color" content="#0e0f11">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -28,7 +28,7 @@
   <header class="hero">
     <div class="tag"><span>●</span> Mods for <a href="https://herdr.dev/">Herdr Desktop</a></div>
     <h1>Mods built on Herdr. <span>In Herdr's own style.</span></h1>
-    <p>Nine mods that use Herdr's own mod API and draw in Herdr's own style: a Git panel, a file browser, a sidebar, a tab bar, one settings dialog for every mod, PR and Linear panels, Mac automation for agents, and staged agent runs. Install one, or all of them as a layout.</p>
+    <p>Seven mods that use Herdr's own mod API and draw in Herdr's own style: a Git panel, a file browser, a sidebar, a tab bar, one settings dialog for every mod, and PR and Linear panels. Install one, or all of them as a layout.</p>
     <div class="prompt">
       <code id="p-mod">Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/<span>&lt;mod-folder&gt;</span></code>
       <button class="copy" data-copy="p-mod" type="button">Copy</button>
@@ -50,7 +50,7 @@
       <div><h3>One folder per mod</h3><p><code>mod.json</code>, a <code>mod.schema.json</code>, the code, <code>tests/</code>, a README for people and a <code>RECIPE.md</code> for the agent that installs it.</p></div>
       <div><h3>Settings described once</h3><p>The schema gives every setting a title, description, type, default and limits. Defaults live in one place in the code, and a test checks schema, <code>mod.json</code> and code agree.</p></div>
       <div><h3>Layout-driven</h3><p>A block's <code>props</code> choose what a mod draws. Better Sidebar is the spaces list, the agents list, both under tabs, a footer or a panel toggle by <code>props.view</code>, so you compose your own layout.</p></div>
-      <div><h3>Plain tooling</h3><p>Tests are <code>node --test</code> with no packages. The four mods that need native work have a small Go helper with its own tests, built on your machine. No Python, no global installs.</p></div>
+      <div><h3>Plain tooling</h3><p>Tests are <code>node --test</code> with no packages. The two mods that need native work have a small Go helper with its own tests, built on your machine. No Python, no global installs.</p></div>
     </div>
   </section>
 
@@ -61,7 +61,6 @@
       <button type="button" class="on" data-filter="all" aria-pressed="true">All</button>
       <button type="button" data-filter="better" aria-pressed="false">Better mods</button>
       <button type="button" data-filter="branch" aria-pressed="false">Branch panels</button>
-      <button type="button" data-filter="automation" aria-pressed="false">Automation</button>
     </div>
     <div class="grid">
       <a class="card" data-group="better" href="docs/better-changes.html">
@@ -112,24 +111,12 @@
         <p>Linear issues for the branch you're on, with state, priority and assignee edits, comments, and a worktree that opens with an agent holding the issue.</p>
         <div class="needs">Needs Go 1.23+ and a Linear API key</div>
       </a>
-      <a class="card" data-group="automation" href="docs/hands.html">
-        <div class="shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/hands/preview.png" alt="Hands in Herdr" loading="lazy" width="960" height="540"></div>
-        <div class="meta"><b>Hands</b><span class="folder mono">hands</span></div>
-        <p>A <code>hands</code> CLI that lets an agent read and drive any Mac app through its accessibility tree, screenshot a window and record the screen, with a panel of what it did.</p>
-        <div class="needs">Needs Go 1.23+ and macOS</div>
-      </a>
-      <a class="card" data-group="automation" href="docs/factory.html">
-        <div class="shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/factory/preview.png" alt="Factory in Herdr" loading="lazy" width="960" height="540"></div>
-        <div class="meta"><b>Factory</b><span class="folder mono">factory</span></div>
-        <p>Staged agent runs, such as developer then reviewer, shown as a tree of live sessions with findings by severity, review loops and follow-ups.</p>
-        <div class="needs">Needs Go 1.23+ and Claude Code</div>
-      </a>
     </div>
   </section>
 
   <section id="estro">
     <h2><i>03</i>Estro: all of them in one layout</h2>
-    <p class="lead">A window for directing agents: every space and agent on the left, the session in the middle, and Files, Changes, PRs, Issues, Hands and Factory in a panel on the right. One prompt installs the layout and all nine mods. A mod you already have is updated, not installed twice, and a layout already called <code>estro</code> is left alone.</p>
+    <p class="lead">A window for directing agents: every space and agent on the left, the session in the middle, and Files, Changes, PRs and Issues in a panel on the right. One prompt installs the layout and all seven mods. A mod you already have is updated, not installed twice, and a layout already called <code>estro</code> is left alone.</p>
     <div class="prompt">
       <code id="p-estro">Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/munza/herdr-mods/tree/main/estro</code>
       <button class="copy" data-copy="p-estro" type="button">Copy</button>
