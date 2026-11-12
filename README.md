@@ -34,7 +34,7 @@ Full docs for each (install, use, settings, update, developer use) are on the [s
 Git, files, spaces, tabs, settings and icons.
 
 - [Better Changes](better-changes/README.md) (`better-changes`): Git panel with staged, unstaged and unpushed files, stage and unstage, commit and amend, history, and an inline or side-by-side diff tab.
-- [Better Files](better-files/README.md) (`better-files`): read-only file browser that opens files in the centre pane, with Markdown rendered, Git marks, Open in your editor, and a menu that hands a file to an agent.
+- [Better Files](better-files/README.md) (`better-files`): read-only file browser that opens files in the centre pane, with a filter that finds any file, Markdown rendered, Git marks, Open in your editor, and a menu that hands a file to an agent.
 - [Better Sidebar](better-sidebar/README.md) (`better-sidebar`): spaces with nested worktrees, Git branches and pull-request status, agents grouped by space or name prefix, both under Spaces and Agents tabs, and a one-line footer.
 - [Better Tabs](better-tabs/README.md) (`better-tabs`): tabs you drag that wrap onto more lines, a toolbar for panels, and a ⋮ menu to hide and pin them.
 - [Better Config](better-config/README.md) (`better-config`): every installed mod's settings in one dialog drawn like Herdr's Settings; it writes only what you changed and offers to restore your changes after an update resets them.

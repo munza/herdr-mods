@@ -5,6 +5,9 @@ A file browser for [Herdr Desktop](https://herdr.dev/) that opens files in the c
 ![Better Files](preview.png)
 
 - **Tree:** the focused pane's folder, named in the panel's title, with changed files coloured and lettered by what happened (green new, yellow edited, red gone or in conflict), and folders holding changes in yellow with a dot. It refreshes as files change.
+- **Filter:** type in the box under the title to find files and folders anywhere in the folder, including ones you haven't opened. A name holding the words matches, and words with a `/` match the path. Matches show as a tree under their folders. Click a file to open it, or a folder to open it in the tree. **Enter** opens the first matching file, and **Escape** or **×** clears the box. In a Git repository, files Git ignores are left out.
+- **Tools** beside the filter: the eye shows or hides dotfiles, in the tree and in the matches, and this computer remembers it. **Collapse all** closes every folder.
+- **Keys:** click the tree, or press a key bound to `better-files.focus`, and the tree takes the keyboard, with a marker on a row. The included [keys.json](keys.json) suggests **Cmd+Shift+E**, as in VS Code's Explorer; merge it into `~/.config/herdr-app/keys.json`, or bind any key you like. **Up**/**Down** or **j**/**k** move, **PgUp**/**PgDn** move 10, and **Home**/**End** go to the ends. **Right** or **l** opens a folder, then steps into it; **Left** or **h** closes it, then steps out. **Enter** opens the row, **/** goes to the filter, **.** shows or hides dotfiles, and **Escape** clears the marker. In the filter box, **Up**/**Down** move through the matches and **Enter** opens the marked one.
 - **Click** a file to show it in one shared centre tab, so browsing doesn't pile up tabs.
 - **Double-click**, or **Keep tab**, to keep that tab. The next click starts a new shared tab.
 - **The file view** is read-only, at your terminal's font size, and follows the file as it changes on disk. Only a real change touches it. Binary and unreadable files say so, and very long files are cut at 400,000 characters.
@@ -69,7 +72,7 @@ Add a `settings` block to the installed `mods/better-files/mod.json` with only w
 
 ## Limits
 
-A folder lists its first 500 entries, and the tree shows 5,000 rows. A file view can't report a selection or jump to a line, because Herdr's editor component offers neither, so you send whole files and an editor opens at the top. Listing a folder needs `sh`, so a Windows machine shows an error.
+A folder lists its first 500 entries, and the tree shows 5,000 rows. The filter shows 200 matches and searches up to 40,000 files; outside a Git repository it goes 12 folders deep (5 in a home folder or `/`) and skips `.git`, `node_modules`, `.venv`, `__pycache__`, `target`, `dist` and `.next`. A file view can't report a selection or jump to a line, because Herdr's editor component offers neither, so you send whole files and an editor opens at the top. Listing a folder needs `sh`, so a Windows machine shows an error.
 
 ## Development
 

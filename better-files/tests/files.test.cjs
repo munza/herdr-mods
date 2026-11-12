@@ -6,26 +6,40 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.join(__dirname, '../mods/better-files');
-const FILES = ['settings.js', 'files/model.js', 'files/file-icons.js', 'views/ui.js', 'files/reads.js', 'actions/open.js', 'actions/outside.js', 'actions/agents.js', 'actions/menus.js', 'views/tree.js', 'views/viewer.js', 'views/context-menu.js', 'main.js'];
+const FILES = ['settings.js', 'files/model.js', 'files/file-icons.js', 'files/filter.js', 'views/ui.js', 'files/reads.js', 'actions/open.js', 'actions/outside.js', 'actions/agents.js', 'actions/menus.js', 'views/tree.js', 'views/filter.js', 'views/tools.js', 'views/keys.js', 'views/viewer.js', 'views/context-menu.js', 'main.js'];
 const source = FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8'))
   .join('\n')
   .replace(/^import\s+[\s\S]*?;$/gm, '')
   .replace(/^export default (\w+);$/m, 'globalThis.Mod = $1;')
   .replace(/^export /gm, '')
-  + '\nObject.assign(globalThis, { parseStatus, parseHunks, buildRows, tokenize, viewable, languageOf, sortEntries, markdownBlocks, resolvePath, isMarkdown, MAX_CHARS });';
+  + '\nObject.assign(globalThis, { parseStatus, parseHunks, buildRows, tokenize, viewable, languageOf, sortEntries, markdownBlocks, resolvePath, isMarkdown, MAX_CHARS, indexOf, findMatches, matchRows, foldersTo, MAX_INDEXED, MAX_MATCHES });';
 
 const TREE = { '/repo': [['d', 'src'], ['f', 'b.md'], ['f', 'a.md']], '/repo/src': [['f', 'main.go']] };
 
-function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
+// Every file under /repo, as git ls-files -z would list it.
+const EVERY = 'a.md\0b.md\0new.txt\0src/main.go\0';
+
+function world({ storage = {}, everything = EVERY, found = '', copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
   const store = new Map(Object.entries(sharedInit));
-  const ran = [], execs = [], sent = [], clipboard = [], closed = [], overlays = [], urls = [];
+  const ran = [], execs = [], sent = [], clipboard = [], closed = [], overlays = [], urls = [], scrolled = [];
   const live = { layout, panes: [{ pane: 'p1', tab: 'tab1', cwd }], focused: { space: 's', tab: 'tab1', pane: 'p1', cwd }, agents, texts: { ...texts } };
-  const timers = [];
+  const timers = [], later = [];
+  const kept = new Map(Object.entries(storage));
+  const waiting = [];
+  // What holds the keyboard: a focus handle or an input's state.
+  let holder = null;
+  const take = (next) => {
+    if (holder === next) return;
+    const last = holder;
+    holder = next;
+    last?.handlers?.blur?.({}, cx);
+    next?.handlers?.focus?.({}, cx);
+  };
   const pending = [];
   const cx = {
-    focus_handle: () => ({ focus() {} }), stop_propagation() {}, notify() {},
+    focus_handle: () => { const handle = { focus: () => take(handle), is_focused: () => holder === handle }; return handle; }, stop_propagation() {}, notify() {},
     spawn(fn) { const p = fn(cx); pending.push(p); return p; },
-    timer: { every: (_ms, fn) => timers.push(fn), after() {} },
+    timer: { every: (_ms, fn) => timers.push(fn), after: (ms, fn) => later.push([ms, fn]) },
     write_to_clipboard: (text) => clipboard.push(text),
     open_url: (url) => urls.push(url),
   };
@@ -40,21 +54,23 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
         return (...a) => {
           if (k === 'id') t.elementId = a[0];
           if (k === 'text_color') t.colors.push(a[0]);
+          if (k === 'border_color') t.border = a[0];
           if (k === 'on_click') t.handlers.click = a[0];
           if (k === 'on_item_click') t.handlers.item = a[0];
           if (k === 'on_link_click') t.handlers.link = a[0];
           if (k === 'on_open_change') t.handlers.open = a[0];
           if (k === 'on_mouse_down') t.handlers[`down-${a[0]}`] = a[1];
+          if (k === 'on_key_down') t.handlers.key = a[0];
           return proxy;
         };
       },
     });
     return proxy;
   }
-  const state = (o = {}) => ({ text: o.value ?? '', opts: o, sets: 0, value() { return this.text; }, set_value(v) { this.text = v; this.sets++; }, on() {}, focus() {}, release() { this.released = true; } });
+  const state = (o = {}) => ({ text: o.value ?? '', opts: o, sets: 0, handlers: {}, value() { return this.text; }, set_value(v) { this.text = v; this.sets++; this.handlers.change?.({}, cx); }, on(ev, fn) { this.handlers[ev] = fn; }, focus() { take(this); }, get focused() { return holder === this; }, release() { this.released = true; } });
   const context = {
-    View: class {}, div: el, svg: (p) => { const e = el(); e.child(`svg:${p}`); return e; }, image: (p) => { const e = el(); e.child(`image:${p}`); return e; }, h_flex: el, v_flex: el,
-    Popover: { new: (id) => el().id(id) }, Textarea: { new: () => el() }, TextareaState: { new: state },
+    View: class {}, div: el, svg: (p) => { const e = el(); e.svgPath = p; e.child(`svg:${p}`); return e; }, image: (p) => { const e = el(); e.child(`image:${p}`); return e; }, h_flex: el, v_flex: el,
+    Popover: { new: (id) => el().id(id) }, Textarea: { new: () => el() }, TextareaState: { new: state }, Input: { new: () => el() }, InputState: { new: state }, ScrollHandle: { new: () => ({ scroll_to_item: (i) => scrolled.push(i) }) },
     Scrollbar: { vertical: () => el() }, TextView: { markdown: (id, text) => el().id(id).child(`md:${text}`) }, v_virtual_list: (_id, count, sizes, key, render) => { const e = el().id('viewer-list'); if (Array.isArray(sizes) && sizes.length !== count) throw new Error('sizes'); for (let i = 0; i < count; i++) key(i); e.children(render({ start: 0, end: Math.min(count, 60) })); return e; }, Editor: { new: (s) => el().child(s.text) }, EditorState: { new: (o) => { const s = state(o); context.lastCode = s; return s; } },
     theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
     settings: () => ({ font_family: 'Code', font_size: 14 }), window: () => ({ platform: 'macos' }),
@@ -67,13 +83,15 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
       if (name === 'tab.new' && args.mod) live.panes.push({ pane: `p${live.panes.length + 1}`, tab: `tab${live.panes.length + 1}`, mod: args.mod });
     },
     openOverlay: (spec) => { overlays.push(JSON.parse(JSON.stringify(spec))); return 'ov1'; }, closeOverlay: (id) => closed.push(id),
-    layout: () => live.layout, appHome: () => '/app', nextCommand: () => new Promise(() => {}), watchFolder: () => new Promise(() => {}),
+    layout: () => live.layout, appHome: () => '/app', nextCommand: () => new Promise((resolve) => waiting.push(resolve)), watchFolder: () => new Promise(() => {}),
     readTextFile: async (p) => { if (p.endsWith('better-changes/mod.json')) return '{}'; if (p.endsWith('better-files/mod.json')) return null; if (live.texts[p] instanceof Error) throw live.texts[p]; return live.texts[p] ?? null; },
     knownAgents: async () => known,
     hc: async (args) => { sent.push(args); return hcResult ?? { code: 0, stdout: '', stderr: '' }; },
     exec: async (bin, args, options) => {
       execs.push([bin, ...args]);
       if (bin === 'sh' && args[2] === 'copy-image') return copyImage ?? { code: 0 };
+      if (bin === 'sh' && args[2] === 'index') return { code: 0, stdout: found };
+      if (bin === 'git' && args.includes('ls-files')) return top ? { code: 0, stdout: everything } : { code: 128, stdout: '' };
       if (bin === 'sh') return { code: 0, stdout: (tree[args.at(-1)] ?? []).flatMap(([k, n]) => [k, n, '']).join('\0').replace(/\0\0/g, '\0') };
       if (bin === 'mdfind') return { code: 0, stdout: editors.some((b) => args[0].includes(b)) ? '/Apps/It.app\n' : '' };
       if (bin === 'git' && args[0] === 'rev-parse') return top ? { code: 0, stdout: `${top}\n` } : { code: 128, stdout: '' };
@@ -81,14 +99,15 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
       if (bin === 'git') return { code: 0, stdout: status };
       return { code: 0, stdout: '', stderr: '' };
     },
-    localStorage: { getItem: () => null, setItem() {} }, console,
+    localStorage: { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, String(v)) }, console,
   };
   vm.createContext(context);
   vm.runInContext(source, context);
   const mod = new context.Mod();
   mod.init({}, cx);
   const flush = async () => { for (let i = 0; i < 25; i++) await new Promise(setImmediate); };
-  return { mod, cx, store, ran, execs, sent, clipboard, closed, overlays, urls, live, context, flush, tick: () => { for (const fn of timers) fn(cx); } };
+  const command = async (name) => { for (let i = 0; i < 25 && !waiting.length; i++) await new Promise(setImmediate); waiting.shift()(name); await flush(); };
+  return { mod, cx, store, kept, command, ran, execs, sent, clipboard, closed, overlays, urls, scrolled, later, live, context, flush, tick: () => { for (const fn of timers) fn(cx); } };
 }
 const ready = async (o) => { const h = world(o); await h.flush(); return h; };
 const find = (node, id) => (node?.elementId === id ? node : node?.nodes?.map((n) => find(n, id)).find(Boolean));
@@ -571,6 +590,12 @@ test('the status parser and helpers', async () => {
   assert.equal(m.languageOf('Makefile'), 'txt');
 });
 
+test('the suggested key focuses the tree through a command the sidebar handles', () => {
+  const keys = JSON.parse(fs.readFileSync(path.join(__dirname, '../keys.json'), 'utf8'));
+  assert.deepEqual(keys, { global: { 'cmd-shift-e': 'better-files.focus' } });
+  assert.match(fs.readFileSync(path.join(root, 'main.js'), 'utf8'), /command === "focus"\) this\.focusTree\(cx\)/);
+});
+
 test('every icon is used, every used icon exists, and nothing here can write a file', () => {
   const code = FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
   const icons = fs.readdirSync(path.join(root, 'icons')).map((f) => f.replace('.svg', ''));
@@ -674,4 +699,312 @@ test('links open on the web, or open a file here in the viewer', async () => {
   assert.deepEqual(JSON.parse(JSON.stringify(args.props.file)), { path: '/repo/docs/next.md', root: '/repo', on: null });
   link('../../elsewhere/x.md', h.cx);
   assert.equal(viewers(h).find((e) => e.file.path === '/elsewhere/x.md').file.root, '/elsewhere', 'outside the root, its own folder');
+});
+
+const typeFilter = async (h, text) => { h.mod.filter.set_value(text); await h.flush(); };
+const rowIds = (h) => (find(h.mod.render(), 'files-list').nodes ?? []).map((n) => n.elementId).filter((id) => typeof id === 'string');
+
+test('the filter index lists every file once, with the folders they are in', async () => {
+  const { context: m } = await ready();
+  const index = m.indexOf('./src/a.ts\0src/a.ts\0docs/guide/intro.md\0README.md\0');
+  assert.deepEqual([...index.files], ['src/a.ts', 'docs/guide/intro.md', 'README.md']);
+  assert.deepEqual([...index.dirs].sort(), ['docs', 'docs/guide', 'src']);
+  assert.equal(index.capped, false);
+  const cut = m.indexOf('one.md\0two.md\0thr');
+  assert.deepEqual([...cut.files], ['one.md', 'two.md'], 'a name cut short is dropped');
+  assert.equal(cut.capped, true);
+  const many = m.indexOf(Array.from({ length: m.MAX_INDEXED + 5 }, (_, i) => `f${i}`).join('\0') + '\0');
+  assert.equal(many.files.length, m.MAX_INDEXED);
+  assert.equal(many.capped, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(m.indexOf(''))), { files: [], dirs: [], capped: false });
+});
+
+test('a name holding the words matches, names that start with them first; a / matches the path', async () => {
+  const { context: m } = await ready();
+  const index = m.indexOf('src/button.tsx\0src/icons/play-button.svg\0docs/buttons.md\0ui/mybutton.md\0tests/a.spec.ts\0Makefile\0');
+  const paths = (q) => [...m.findMatches(index, q).hits.map((h) => h.path)];
+  assert.deepEqual(paths('BUTTON'), ['src/button.tsx', 'docs/buttons.md', 'ui/mybutton.md', 'src/icons/play-button.svg']);
+  assert.deepEqual(paths('icons'), ['src/icons']);
+  assert.deepEqual(JSON.parse(JSON.stringify(m.findMatches(index, 'icons').hits[0])), { path: 'src/icons', dir: true });
+  assert.deepEqual(paths('src/b'), ['src/button.tsx']);
+  assert.deepEqual(paths('nothing here'), []);
+  assert.deepEqual(paths('   '), []);
+  const big = m.indexOf(Array.from({ length: 250 }, (_, i) => `f${i}.md`).join('\0') + '\0');
+  const found = m.findMatches(big, '.md');
+  assert.equal(found.hits.length, m.MAX_MATCHES);
+  assert.equal(found.more, true);
+});
+
+test('matches show as a tree under their folders, folders first, and a folder reveals all the way down', async () => {
+  const { context: m } = await ready();
+  const rows = m.matchRows([{ path: 'src/ui/button.tsx', dir: false }, { path: 'docs', dir: true }, { path: 'a-button.md', dir: false }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(rows)), [
+    { relative: 'docs', name: 'docs', dir: true, depth: 0, hit: true, open: false },
+    { relative: 'src', name: 'src', dir: true, depth: 0, hit: false, open: true },
+    { relative: 'src/ui', name: 'ui', dir: true, depth: 1, hit: false, open: true },
+    { relative: 'src/ui/button.tsx', name: 'button.tsx', dir: false, depth: 2, hit: true, open: false },
+    { relative: 'a-button.md', name: 'a-button.md', dir: false, depth: 0, hit: true, open: false },
+  ]);
+  assert.deepEqual([...m.foldersTo('a/b/c', true)], ['a', 'a/b', 'a/b/c']);
+  assert.deepEqual([...m.foldersTo('a/b/c.md', false)], ['a', 'a/b']);
+});
+
+test('the filter finds a file in a folder not opened yet, from Git\'s list, and Enter opens it', async () => {
+  const h = await ready();
+  assert.ok(find(h.mod.render(), 'files-filter-input'), 'the filter sits under the header');
+  assert.equal(find(h.mod.render(), 'files-filter-clear'), undefined, 'no clear button while empty');
+  await typeFilter(h, 'main');
+  assert.equal(h.execs.filter((e) => e.includes('ls-files')).length, 1);
+  assert.equal(h.execs.filter((e) => e[0] === 'sh' && e[3] === 'index').length, 0, 'no find inside a repo');
+  assert.deepEqual(rowIds(h), ['files-row-src', 'files-row-src/main.go']);
+  assert.match(strings(find(h.mod.render(), 'files-row-src/main.go')), /main\.go M/);
+  const chevron = (id) => find(h.mod.render(), id).nodes[0].nodes[0].svgPath;
+  assert.equal(chevron('files-row-src'), 'mods/better-files/icons/chevron-down.svg', 'shut in the tree, open among the matches');
+  await typeFilter(h, 'mai');
+  assert.equal(h.execs.filter((e) => e.includes('ls-files')).length, 1, 'typing more reads nothing again');
+  h.mod.filter.handlers.submit({}, h.cx);
+  assert.equal(tabs(h).length, 1);
+  assert.equal(tabs(h)[0][1].name, 'main.go');
+  click(h, 'files-filter-clear');
+  assert.equal(h.mod.filter.value(), '');
+  assert.deepEqual(rowIds(h), ['files-row-src', 'files-row-a.md', 'files-row-b.md']);
+  assert.equal(find(h.mod.render(), 'files-row-src/main.go'), undefined, 'the tree is as it was, src still shut');
+});
+
+test('Escape clears the filter, and a folder picked from the matches opens in the tree and scrolls to it', async () => {
+  const h = await ready();
+  await typeFilter(h, 'zz');
+  assert.match(strings(find(h.mod.render(), 'files-list')), /^No matches\.$/);
+  let stopped = false;
+  await typeFilter(h, 'sr');
+  assert.deepEqual(rowIds(h), ['files-row-src']);
+  click(h, 'files-row-src');
+  await h.flush();
+  assert.equal(h.mod.filter.value(), '');
+  assert.ok(h.mod.folders.has('src'));
+  h.mod.render();
+  assert.deepEqual(h.scrolled, [0]);
+  assert.ok(find(h.mod.render(), 'files-row-src/main.go'), 'the folder opened');
+  await typeFilter(h, 'b.m');
+  const keys = find(h.mod.render(), 'files-filter');
+  keys.handlers.key({ key: 'escape', keystroke: 'escape' }, { stop_propagation: () => (stopped = true), notify() {} });
+  assert.equal(h.mod.filter.value(), '');
+  assert.equal(stopped, true);
+});
+
+test('Enter skips a matching folder for the first matching file, and a long list says it stops at 200', async () => {
+  const h = await ready({ everything: 'docs/doc.md\0' });
+  await typeFilter(h, 'doc');
+  assert.deepEqual(rowIds(h), ['files-row-docs', 'files-row-docs/doc.md']);
+  h.mod.filter.handlers.submit({}, h.cx);
+  assert.equal(tabs(h)[0][1].name, 'doc.md');
+  const many = await ready({ everything: Array.from({ length: 250 }, (_, i) => `n${i}.md`).join('\0') + '\0' });
+  await typeFilter(many, '.md');
+  assert.equal(rowIds(many).length, 200);
+  assert.equal(strings(find(many.mod.render(), 'files-list').nodes.at(-1)), 'Showing the first 200 matches.');
+});
+
+test('outside a repo the filter uses find, shallower in a home folder, and says when the list was cut', async () => {
+  const h = await ready({ top: null, found: './notes/todo.txt\0./notes/plan.txt\0./ca' });
+  await typeFilter(h, 'plan');
+  const call = h.execs.find((e) => e[0] === 'sh' && e[3] === 'index');
+  assert.deepEqual(call.slice(3), ['index', '12', '4000000']);
+  assert.match(call[2], /-name '\.git' -o -name 'node_modules'/);
+  assert.deepEqual(rowIds(h), ['files-row-notes', 'files-row-notes/plan.txt']);
+  assert.match(strings(find(h.mod.render(), 'files-list')), /only part of it was searched \(at most 40,000 files\)\.$/);
+  const home = await ready({ top: null, cwd: '/home/kim', tree: { '/home/kim': [] } });
+  await typeFilter(home, 'x');
+  assert.deepEqual(home.execs.find((e) => e[0] === 'sh' && e[3] === 'index').slice(4), ['5', '4000000']);
+});
+
+test('the list is read again when it is old, and a failed read says why', async () => {
+  const h = await ready();
+  await typeFilter(h, 'main');
+  h.mod.index.at = 0;
+  h.tick();
+  await h.flush();
+  assert.equal(h.execs.filter((e) => e.includes('ls-files')).length, 2);
+  h.mod.index.at = Date.now() - 6000;
+  h.mod.index.stale = true;
+  h.mod.refresh(h.cx);
+  await h.flush();
+  assert.equal(h.execs.filter((e) => e.includes('ls-files')).length, 3);
+  const broken = await ready({ top: null });
+  broken.context.exec = async () => ({ code: 1, stdout: '', stderr: 'find: permission denied' });
+  await typeFilter(broken, 'x');
+  assert.match(strings(find(broken.mod.render(), 'files-list')), /^find: permission denied$/);
+});
+
+test('a busy folder reads the list again at most every 5 seconds, and catches up after', async () => {
+  const h = await ready();
+  await typeFilter(h, 'main');
+  const reads = () => h.execs.filter((e) => e.includes('ls-files')).length;
+  assert.equal(reads(), 1);
+  for (let i = 0; i < 3; i++) {
+    h.mod.index.stale = true;
+    h.mod.refresh(h.cx);
+    await h.flush();
+  }
+  assert.equal(reads(), 1);
+  assert.equal(h.later.length, 1);
+  assert.ok(h.later[0][0] > 4000 && h.later[0][0] <= 5000, `waits ${h.later[0][0]} ms`);
+  h.mod.index.at = Date.now() - 6000;
+  h.later[0][1](h.cx);
+  await h.flush();
+  assert.equal(reads(), 2);
+  assert.equal(h.mod.index.stale, false);
+  h.mod.index.stale = true;
+  h.mod.refresh(h.cx);
+  assert.equal(h.later.length, 2, 'the next busy spell waits too');
+});
+
+test('a folder picked from the matches opens even while the tree is still loading', async () => {
+  const h = await ready();
+  await typeFilter(h, 'sr');
+  h.mod.loading = h.mod.key;
+  click(h, 'files-row-src');
+  await h.flush();
+  assert.ok(find(h.mod.render(), 'files-row-src/main.go'), 'the folder has its files');
+});
+
+test('moving to another folder drops the last one\'s filter error, marker and the folder it was to scroll to', async () => {
+  const tree = { ...TREE, '/elsewhere': [['d', 'src']], '/elsewhere/src': [] };
+  const h = await ready({ tree });
+  await typeFilter(h, 'sr');
+  click(h, 'files-row-src');
+  h.mod.indexError = 'find: permission denied';
+  h.mod.cursor = 'src';
+  h.live.panes[0].cwd = '/elsewhere';
+  h.live.focused.cwd = '/elsewhere';
+  h.tick();
+  assert.equal(h.mod.indexError, null);
+  assert.equal(h.mod.cursor, null, 'a marker from the last folder goes');
+  await h.flush();
+  h.mod.render();
+  assert.deepEqual(h.scrolled, []);
+});
+
+const keyOn = (h, id, keystroke) => {
+  let stopped = false;
+  find(h.mod.render(), id).handlers.key({ keystroke, key: keystroke, modifiers: {} }, { ...h.cx, stop_propagation: () => { stopped = true; } });
+  return stopped;
+};
+const press = (h, keystroke) => keyOn(h, 'files-list', keystroke);
+const marked = (h) => {
+  const out = [];
+  const walk = (n) => { if (n?.elementId?.startsWith?.('files-row-') && n.border === '#accent') out.push(n.elementId.slice('files-row-'.length)); (n?.nodes ?? []).forEach(walk); };
+  walk(h.mod.render());
+  return out;
+};
+
+test('clicking the tree gives it the keyboard, and the arrows, j and k move a marker through the rows', async () => {
+  const h = await ready();
+  assert.deepEqual(marked(h), [], 'no marker before the tree has the keyboard');
+  click(h, 'files-row-a.md');
+  assert.equal(h.mod.treeFocus.is_focused(), true);
+  assert.deepEqual(marked(h), ['a.md']);
+  assert.equal(press(h, 'down'), true);
+  assert.deepEqual(marked(h), ['b.md']);
+  press(h, 'down');
+  assert.deepEqual(marked(h), ['b.md'], 'it stops at the end');
+  press(h, 'k');
+  press(h, 'k');
+  assert.deepEqual(marked(h), ['src']);
+  press(h, 'j');
+  assert.deepEqual(marked(h), ['a.md']);
+  press(h, 'end');
+  assert.deepEqual(marked(h), ['b.md']);
+  press(h, 'home');
+  assert.deepEqual(marked(h), ['src']);
+  assert.deepEqual(h.scrolled.slice(-2), [2, 0], 'the marked row is scrolled into view');
+  assert.equal(press(h, 'x'), false, 'other keys go on to Herdr');
+  assert.equal(press(h, 'escape'), true);
+  assert.deepEqual(marked(h), []);
+  assert.equal(press(h, 'escape'), false, 'with no marker, Escape goes on');
+  const many = await ready({ tree: { '/repo': Array.from({ length: 25 }, (_, i) => ['f', `n${String(i).padStart(2, '0')}.txt`]) } });
+  await many.command('focus');
+  assert.deepEqual(marked(many), ['n00.txt'], 'the focus command marks the first row');
+  press(many, 'pagedown');
+  assert.deepEqual(marked(many), ['n10.txt']);
+  press(many, 'pageup');
+  assert.deepEqual(marked(many), ['n00.txt']);
+});
+
+test('right and left open and close folders and step in and out, and Enter opens a file or a folder', async () => {
+  const h = await ready();
+  await h.command('focus');
+  assert.deepEqual(marked(h), ['src']);
+  press(h, 'right');
+  await h.flush();
+  assert.ok(h.mod.folders.has('src'));
+  assert.deepEqual(marked(h), ['src'], 'opening a folder stays on it');
+  press(h, 'l');
+  assert.deepEqual(marked(h), ['src/main.go'], 'then steps into it');
+  press(h, 'h');
+  assert.deepEqual(marked(h), ['src'], 'left goes to the folder above');
+  press(h, 'left');
+  assert.equal(h.mod.folders.has('src'), false, 'and then closes it');
+  press(h, 'enter');
+  await h.flush();
+  assert.ok(h.mod.folders.has('src'), 'Enter opens a folder');
+  press(h, 'down');
+  press(h, 'enter');
+  assert.equal(tabs(h).at(-1)[1].name, 'main.go', 'and opens a file in the shared tab');
+});
+
+test('/ goes to the filter, the arrows there move through the matches, and Enter opens the marked one', async () => {
+  const h = await ready();
+  await h.command('focus');
+  assert.equal(press(h, '/'), true);
+  assert.equal(h.mod.filter.focused, true);
+  assert.deepEqual(marked(h), [], 'the tree has let go of the keyboard');
+  await typeFilter(h, 'mai');
+  assert.deepEqual(rowIds(h), ['files-row-src', 'files-row-src/main.go']);
+  assert.equal(keyOn(h, 'files-filter', 'down'), true);
+  assert.deepEqual(marked(h), ['src']);
+  keyOn(h, 'files-filter', 'down');
+  assert.deepEqual(marked(h), ['src/main.go']);
+  h.mod.filter.handlers.submit({}, h.cx);
+  assert.equal(tabs(h).at(-1)[1].name, 'main.go');
+  keyOn(h, 'files-filter', 'up');
+  h.mod.filter.handlers.submit({}, h.cx);
+  await h.flush();
+  assert.equal(h.mod.filter.value(), '', 'Enter on a folder opens it in the tree');
+  assert.ok(find(h.mod.render(), 'files-row-src/main.go'));
+  assert.deepEqual(marked(h), ['src'], 'and the tree takes the keyboard, on that folder');
+});
+
+test('dotfiles hide and show with the eye button or ., in the tree and the matches, and stay that way after a restart', async () => {
+  const tree = { ...TREE, '/repo': [...TREE['/repo'], ['f', '.env'], ['d', '.github']] };
+  const everything = `${EVERY}.env\0.github/ci.yml\0`;
+  const h = await ready({ tree, everything });
+  assert.ok(find(h.mod.render(), 'files-row-.env'));
+  click(h, 'files-tool-dotfiles');
+  assert.equal(find(h.mod.render(), 'files-row-.env'), undefined);
+  assert.equal(find(h.mod.render(), 'files-row-.github'), undefined);
+  assert.equal(h.kept.get('better-files.dotfiles'), 'false');
+  await typeFilter(h, 'ci');
+  assert.match(strings(find(h.mod.render(), 'files-list')), /^No matches\.$/);
+  const again = await ready({ tree, everything, storage: { 'better-files.dotfiles': 'false' } });
+  assert.equal(find(again.mod.render(), 'files-row-.env'), undefined, 'remembered');
+  await again.command('focus');
+  press(again, '.');
+  assert.ok(find(again.mod.render(), 'files-row-.env'));
+  assert.equal(again.kept.get('better-files.dotfiles'), 'true');
+  await typeFilter(again, 'ci');
+  assert.deepEqual(rowIds(again), ['files-row-.github', 'files-row-.github/ci.yml']);
+});
+
+test('collapse all closes every folder, and a marker inside one moves to its top folder', async () => {
+  const h = await ready();
+  await h.command('focus');
+  press(h, 'right');
+  await h.flush();
+  press(h, 'down');
+  assert.deepEqual(marked(h), ['src/main.go']);
+  click(h, 'files-tool-collapse');
+  assert.equal(find(h.mod.render(), 'files-row-src/main.go'), undefined);
+  assert.equal(h.mod.folders.size, 0);
+  assert.deepEqual(marked(h), ['src']);
+  assert.equal(find(h.mod.render(), 'files-tool-collapse').handlers.click, undefined, 'nothing is left to close');
 });
