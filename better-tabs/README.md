@@ -63,7 +63,7 @@ Your arrangement is saved per layout, by button ID, and doesn't edit the layout 
 
 `herdr-app do better-tabs.button:changes` runs a button by ID, and `herdr-app do better-tabs.overflow` opens the menu. Bind them in `keys.json` if you like; the mod installs no keys.
 
-A mod's tab shows the icon it publishes in the `mod-icons` shared map. Better Changes does this.
+A mod's tab shows the icon it publishes in the `mod-icons` shared map. Better Changes does this. A tab whose pane publishes its own icon in `pane-heads`, as a Better Files or Better Changes file tab does, shows that icon instead.
 
 ## Settings
 
