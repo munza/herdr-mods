@@ -2,8 +2,8 @@
 // path. It needs no block in a layout; shown anyway, it lists a few names with their icons.
 import { View, div, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { settings, theme } from "herdr";
-import { fileIcon, loadFileIcons } from "./file-icons.js";
+import { theme } from "herdr";
+import { fileIcon, isLight, loadFileIcons } from "./file-icons.js";
 
 const SAMPLES = [
   ["src", true],
@@ -28,7 +28,7 @@ export default class BetterIcons extends View {
 
   render() {
     const t = theme();
-    const light = settings().dark === false;
+    const light = isLight(t.background);
     const note = !this.loaded ? "Loading icons…" : this.table ? `Icons from ${this.table.source}` : "icons.json is missing or unreadable.";
     return v_flex()
       .id("better-icons")

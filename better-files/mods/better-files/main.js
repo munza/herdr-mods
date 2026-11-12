@@ -15,7 +15,7 @@ import { View } from "gpui-kit";
 import { TextareaState } from "gpui-base";
 import { appHome, exec, nextCommand, props, setShared, shared, spaces } from "herdr";
 import { loadSettings, duration } from "./settings.js";
-import { loadFileIcons } from "./files/file-icons.js";
+import { followFileIcons } from "./files/file-icons.js";
 import { readMethods } from "./files/reads.js";
 import { openMethods } from "./actions/open.js";
 import { outsideMethods } from "./actions/outside.js";
@@ -43,11 +43,7 @@ class BetterFiles extends View {
       ...(shared("mod-icons") ?? {}),
       "better-files": "mods/better-files/icons/file.svg",
     });
-    this.fileIcons = null;
-    cx.spawn(async (cx) => {
-      this.fileIcons = await loadFileIcons();
-      if (this.fileIcons) cx.notify();
-    });
+    followFileIcons(this, cx);
     if (this.mode === "viewer") return this.initViewer(p, cx);
     this.initSidebar(cx);
   }

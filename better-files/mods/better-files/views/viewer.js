@@ -20,6 +20,7 @@ import {
 } from "../files/model.js";
 import { viewerEntries } from "../actions/open.js";
 import { foundEditors } from "../actions/outside.js";
+import { fileIcon, isLight } from "../files/file-icons.js";
 import { TEXT, FileIcon, Markdown, Message, MenuButton, TextButton, codeFont, codeSize } from "./ui.js";
 
 const CHAR_WIDTH = 0.62; // Of the code font's size, to size the sideways scroll.
@@ -159,10 +160,12 @@ export const viewerMethods = {
     if (!file) return null;
     const name = baseName(file.path);
     const folder = file.path.slice(file.root.length + 1, -name.length - 1);
+    const picture = fileIcon(this.fileIcons, file.path, { light: isLight(theme().background) });
     return {
       title: name,
       detail: [folder, this.viewerEntry()?.preview ? "Preview" : null].filter(Boolean).join(" · "),
-      icon: "mods/better-files/icons/file.svg",
+      // color: a full-colour picture, which Better Changes' pane header draws untinted.
+      ...(picture ? { icon: picture, color: true } : { icon: "mods/better-files/icons/file.svg" }),
     };
   },
 
@@ -536,7 +539,7 @@ export const viewerMethods = {
           .border_color(t.border)
           .text_size(TEXT.small)
           .child(
-            FileIcon({ icons: this.fileIcons, relative: this.file.path.slice(this.file.root.length + 1), color: t.dim }),
+            FileIcon({ icons: this.fileIcons, path: this.file.path, color: t.dim, t }),
           )
           .child(div().flex_none().truncate().max_w(260).font_medium().child(head.title))
           .child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(head.detail))

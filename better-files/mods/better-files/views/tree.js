@@ -85,7 +85,7 @@ export const treeMethods = {
         this.showRowMenu(this.targetOf(relative, dir));
       })
       .child(dir ? Chevron(open) : div().w(14).flex_none())
-      .child(FileIcon({ icons: this.fileIcons, relative, dir, open, color: t.muted }))
+      .child(FileIcon({ icons: this.fileIcons, path, dir, open, color: t.muted, t }))
       .child(
         div()
           .flex_1()

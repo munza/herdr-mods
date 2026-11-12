@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Better Icons · Herdr Mods Docs</title>
-<meta name="description" content="The icons of VS Code's Material Icon Theme for the other mods. With it installed, Better Files shows a colour icon for every file and folder.">
+<meta name="description" content="The icons of VS Code's Material Icon Theme for the other mods. With it installed, Better Files and Better Changes show a colour icon for every file and folder.">
 <meta name="theme-color" content="#0e0f11">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -46,7 +46,7 @@
     <main>
 <article class="doc" id="better-icons">
   <h2>Better Icons</h2>
-  <p class="lead">The icons of VS Code's Material Icon Theme for the other mods. With it installed, Better Files shows a colour icon for every file and folder: a TypeScript file, a <code>package.json</code>, a <code>.github</code> folder and a <code>src</code> folder each look different.</p>
+  <p class="lead">The icons of VS Code's Material Icon Theme for the other mods. With it installed, Better Files and Better Changes show a colour icon for every file and folder: a TypeScript file, a <code>package.json</code>, a <code>.github</code> folder and a <code>src</code> folder each look different.</p>
   <p class="meta-line"><span>Version 1.0.0</span><span>Needs: Nothing extra</span><a href="https://github.com/munza/herdr-mods/tree/main/better-icons">Source on GitHub</a></p>
   <figure class="doc-shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/better-icons/preview.png" alt="Better Icons in Herdr" width="1440" height="810"></figure>
 
@@ -67,23 +67,24 @@
 
   <h3 id="better-icons-use">Use</h3>
   <ul>
-    <li><b>Optional:</b> a mod that uses it keeps its own plain icons when it isn't installed. Today that's <a href="better-files.html">Better Files</a>: its tree and its file tab's title row.</li>
+    <li><b>Optional:</b> a mod that uses it keeps its own plain icons when it isn't installed. Today that's <a href="better-files.html">Better Files</a>, in its tree and its file tab's title row, and <a href="better-changes.html">Better Changes</a>, in its file lists and its diff's header.</li>
     <li><b>Picked the way VS Code picks them:</b> a rule for a path, such as <code>.github/workflows</code>, beats a name, a name beats an extension, and the longest extension wins, so <code>app.spec.ts</code> gets the test icon and <code>app.ts</code> the TypeScript one.</li>
     <li><b>Light themes</b> get the theme's light icons for the 236 names it has them for.</li>
     <li><b>Shown in a layout anyway,</b> it lists a few sample names with their icons.</li>
   </ul>
-  <p>Limits: 1,184 icons from Material Icon Theme 5.40.0, about 5 MB. A mod reads the table when it starts, so after an update reopen its panel or restart Herdr. A symlinked mod folder loads code but not icons, so install by copying.</p>
+  <p>Limits: 1,184 icons from Material Icon Theme 5.40.0, about 5 MB. Mods reread the table when Better Icons' folder changes, so an update or uninstall shows without a restart. A symlinked mod folder loads code but not icons, so install by copying.</p>
 
   <h3 id="better-icons-settings">Settings</h3>
   <p>Better Icons has no settings.</p>
 
   <h3 id="better-icons-update">Update</h3>
-  <p>Copy <code>mods/better-icons/</code> into Herdr again, then reopen the panels that use it.</p>
+  <p>Copy <code>mods/better-icons/</code> into Herdr again. The mods that use it reread the table when its folder changes.</p>
 
   <h3 id="better-icons-developers">For developers</h3>
-  <p>To use the icons in your mod, copy <code>mods/better-icons/file-icons.js</code> into it, unchanged, since a mod can't import from another's folder. Read the table once, and draw with <code>image()</code>, since <code>svg()</code> would tint a colour icon one colour:</p>
-  <pre>const table = await loadFileIcons();          // null without Better Icons
-const picture = fileIcon(table, "src/app.ts", { dir: false, open: false, light: settings().dark === false });
+  <p>To use the icons in your mod, copy <code>mods/better-icons/file-icons.js</code> into it, unchanged, since a mod can't import from another's folder. Call <code>followFileIcons(this, cx)</code> in <code>init</code>: it keeps <code>this.fileIcons</code> current, null without Better Icons, and redraws the view when an install or update reaches it. Draw with <code>image()</code>, since <code>svg()</code> would tint a colour icon one colour:</p>
+  <pre>followFileIcons(this, cx);                    // in init
+const table = this.fileIcons;                 // in render
+const picture = fileIcon(table, "/repo/src/app.ts", { dir: false, open: false, light: isLight(theme().background) });
 picture ? image(picture).size(14) : myOwnIcon</pre>
   <p>To move to another release of the theme, change <code>VERSION</code> in <code>generate.mjs</code> and run it on the unpacked npm package. It reads only the package's JSON and SVG files, and the tests then check every named icon is there.</p>
   <pre>npm pack material-icon-theme@&lt;version&gt; &amp;&amp; tar xzf material-icon-theme-&lt;version&gt;.tgz

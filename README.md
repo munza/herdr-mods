@@ -38,7 +38,7 @@ Git, files, spaces, tabs, settings and icons.
 - [Better Sidebar](better-sidebar/README.md) (`better-sidebar`): spaces with nested worktrees, Git branches and pull-request status, agents grouped by space or name prefix, both under Spaces and Agents tabs, and a one-line footer.
 - [Better Tabs](better-tabs/README.md) (`better-tabs`): tabs you drag that wrap onto more lines, a toolbar for panels, and a ⋮ menu to hide and pin them.
 - [Better Config](better-config/README.md) (`better-config`): every installed mod's settings in one dialog drawn like Herdr's Settings; it writes only what you changed and offers to restore your changes after an update resets them.
-- [Better Icons](better-icons/README.md) (`better-icons`): VS Code's Material Icon Theme for the other mods. With it installed, Better Files shows a colour icon for every file and folder; without it, mods keep their plain icons.
+- [Better Icons](better-icons/README.md) (`better-icons`): VS Code's Material Icon Theme for the other mods. With it installed, Better Files and Better Changes show a colour icon for every file and folder; without it, mods keep their plain icons.
 
 ### Branch panels
 
