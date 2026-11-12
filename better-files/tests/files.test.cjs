@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.join(__dirname, '../mods/better-files');
-const FILES = ['settings.js', 'files/model.js', 'files/filter.js', 'views/ui.js', 'files/reads.js', 'actions/open.js', 'actions/outside.js', 'actions/agents.js', 'actions/menus.js', 'views/tree.js', 'views/filter.js', 'views/viewer.js', 'views/context-menu.js', 'main.js'];
+const FILES = ['settings.js', 'files/model.js', 'files/filter.js', 'views/ui.js', 'files/reads.js', 'actions/open.js', 'actions/outside.js', 'actions/agents.js', 'actions/menus.js', 'views/tree.js', 'views/filter.js', 'views/tools.js', 'views/keys.js', 'views/viewer.js', 'views/context-menu.js', 'main.js'];
 const source = FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8'))
   .join('\n')
   .replace(/^import\s+[\s\S]*?;$/gm, '')
@@ -19,14 +19,25 @@ const TREE = { '/repo': [['d', 'src'], ['f', 'b.md'], ['f', 'a.md']], '/repo/src
 // Every file under /repo, as git ls-files -z would list it.
 const EVERY = 'a.md\0b.md\0new.txt\0src/main.go\0';
 
-function world({ everything = EVERY, found = '', copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
+function world({ storage = {}, everything = EVERY, found = '', copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
   const store = new Map(Object.entries(sharedInit));
   const ran = [], execs = [], sent = [], clipboard = [], closed = [], overlays = [], urls = [], scrolled = [];
   const live = { layout, panes: [{ pane: 'p1', tab: 'tab1', cwd }], focused: { space: 's', tab: 'tab1', pane: 'p1', cwd }, agents, texts: { ...texts } };
   const timers = [], later = [];
+  const kept = new Map(Object.entries(storage));
+  const waiting = [];
+  // What holds the keyboard: a focus handle or an input's state.
+  let holder = null;
+  const take = (next) => {
+    if (holder === next) return;
+    const last = holder;
+    holder = next;
+    last?.handlers?.blur?.({}, cx);
+    next?.handlers?.focus?.({}, cx);
+  };
   const pending = [];
   const cx = {
-    focus_handle: () => ({ focus() {} }), stop_propagation() {}, notify() {},
+    focus_handle: () => { const handle = { focus: () => take(handle), is_focused: () => holder === handle }; return handle; }, stop_propagation() {}, notify() {},
     spawn(fn) { const p = fn(cx); pending.push(p); return p; },
     timer: { every: (_ms, fn) => timers.push(fn), after: (ms, fn) => later.push([ms, fn]) },
     write_to_clipboard: (text) => clipboard.push(text),
@@ -43,6 +54,7 @@ function world({ everything = EVERY, found = '', copyImage, diff = '', layout = 
         return (...a) => {
           if (k === 'id') t.elementId = a[0];
           if (k === 'text_color') t.colors.push(a[0]);
+          if (k === 'border_color') t.border = a[0];
           if (k === 'on_click') t.handlers.click = a[0];
           if (k === 'on_item_click') t.handlers.item = a[0];
           if (k === 'on_link_click') t.handlers.link = a[0];
@@ -55,7 +67,7 @@ function world({ everything = EVERY, found = '', copyImage, diff = '', layout = 
     });
     return proxy;
   }
-  const state = (o = {}) => ({ text: o.value ?? '', opts: o, sets: 0, handlers: {}, value() { return this.text; }, set_value(v) { this.text = v; this.sets++; this.handlers.change?.({}, cx); }, on(ev, fn) { this.handlers[ev] = fn; }, focus() {}, release() { this.released = true; } });
+  const state = (o = {}) => ({ text: o.value ?? '', opts: o, sets: 0, handlers: {}, value() { return this.text; }, set_value(v) { this.text = v; this.sets++; this.handlers.change?.({}, cx); }, on(ev, fn) { this.handlers[ev] = fn; }, focus() { take(this); }, get focused() { return holder === this; }, release() { this.released = true; } });
   const context = {
     View: class {}, div: el, svg: (p) => { const e = el(); e.svgPath = p; return e; }, image: (p) => { const e = el(); e.child(`image:${p}`); return e; }, h_flex: el, v_flex: el,
     Popover: { new: (id) => el().id(id) }, Textarea: { new: () => el() }, TextareaState: { new: state }, Input: { new: () => el() }, InputState: { new: state }, ScrollHandle: { new: () => ({ scroll_to_item: (i) => scrolled.push(i) }) },
@@ -71,7 +83,7 @@ function world({ everything = EVERY, found = '', copyImage, diff = '', layout = 
       if (name === 'tab.new' && args.mod) live.panes.push({ pane: `p${live.panes.length + 1}`, tab: `tab${live.panes.length + 1}`, mod: args.mod });
     },
     openOverlay: (spec) => { overlays.push(JSON.parse(JSON.stringify(spec))); return 'ov1'; }, closeOverlay: (id) => closed.push(id),
-    layout: () => live.layout, appHome: () => '/app', nextCommand: () => new Promise(() => {}), watchFolder: () => new Promise(() => {}),
+    layout: () => live.layout, appHome: () => '/app', nextCommand: () => new Promise((resolve) => waiting.push(resolve)), watchFolder: () => new Promise(() => {}),
     readTextFile: async (p) => { if (p.endsWith('better-changes/mod.json')) return '{}'; if (p.endsWith('better-files/mod.json')) return null; if (live.texts[p] instanceof Error) throw live.texts[p]; return live.texts[p] ?? null; },
     knownAgents: async () => known,
     hc: async (args) => { sent.push(args); return hcResult ?? { code: 0, stdout: '', stderr: '' }; },
@@ -87,14 +99,15 @@ function world({ everything = EVERY, found = '', copyImage, diff = '', layout = 
       if (bin === 'git') return { code: 0, stdout: status };
       return { code: 0, stdout: '', stderr: '' };
     },
-    localStorage: { getItem: () => null, setItem() {} }, console,
+    localStorage: { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, String(v)) }, console,
   };
   vm.createContext(context);
   vm.runInContext(source, context);
   const mod = new context.Mod();
   mod.init({}, cx);
   const flush = async () => { for (let i = 0; i < 25; i++) await new Promise(setImmediate); };
-  return { mod, cx, store, ran, execs, sent, clipboard, closed, overlays, urls, scrolled, later, live, context, flush, tick: () => { for (const fn of timers) fn(cx); } };
+  const command = async (name) => { for (let i = 0; i < 25 && !waiting.length; i++) await new Promise(setImmediate); waiting.shift()(name); await flush(); };
+  return { mod, cx, store, kept, command, ran, execs, sent, clipboard, closed, overlays, urls, scrolled, later, live, context, flush, tick: () => { for (const fn of timers) fn(cx); } };
 }
 const ready = async (o) => { const h = world(o); await h.flush(); return h; };
 const find = (node, id) => (node?.elementId === id ? node : node?.nodes?.map((n) => find(n, id)).find(Boolean));
@@ -746,7 +759,7 @@ test('Escape clears the filter, and a folder picked from the matches opens in th
   assert.ok(find(h.mod.render(), 'files-row-src/main.go'), 'the folder opened');
   await typeFilter(h, 'b.m');
   const keys = find(h.mod.render(), 'files-filter');
-  keys.handlers.key({ key: 'escape' }, { stop_propagation: () => (stopped = true), notify() {} });
+  keys.handlers.key({ key: 'escape', keystroke: 'escape' }, { stop_propagation: () => (stopped = true), notify() {} });
   assert.equal(h.mod.filter.value(), '');
   assert.equal(stopped, true);
 });
@@ -826,17 +839,144 @@ test('a folder picked from the matches opens even while the tree is still loadin
   assert.ok(find(h.mod.render(), 'files-row-src/main.go'), 'the folder has its files');
 });
 
-test('moving to another folder drops the last one\'s filter error and the folder it was to scroll to', async () => {
+test('moving to another folder drops the last one\'s filter error, marker and the folder it was to scroll to', async () => {
   const tree = { ...TREE, '/elsewhere': [['d', 'src']], '/elsewhere/src': [] };
   const h = await ready({ tree });
   await typeFilter(h, 'sr');
   click(h, 'files-row-src');
   h.mod.indexError = 'find: permission denied';
+  h.mod.cursor = 'src';
   h.live.panes[0].cwd = '/elsewhere';
   h.live.focused.cwd = '/elsewhere';
   h.tick();
   assert.equal(h.mod.indexError, null);
+  assert.equal(h.mod.cursor, null, 'a marker from the last folder goes');
   await h.flush();
   h.mod.render();
   assert.deepEqual(h.scrolled, []);
+});
+
+const keyOn = (h, id, keystroke) => {
+  let stopped = false;
+  find(h.mod.render(), id).handlers.key({ keystroke, key: keystroke, modifiers: {} }, { ...h.cx, stop_propagation: () => { stopped = true; } });
+  return stopped;
+};
+const press = (h, keystroke) => keyOn(h, 'files-list', keystroke);
+const marked = (h) => {
+  const out = [];
+  const walk = (n) => { if (n?.elementId?.startsWith?.('files-row-') && n.border === '#accent') out.push(n.elementId.slice('files-row-'.length)); (n?.nodes ?? []).forEach(walk); };
+  walk(h.mod.render());
+  return out;
+};
+
+test('clicking the tree gives it the keyboard, and the arrows, j and k move a marker through the rows', async () => {
+  const h = await ready();
+  assert.deepEqual(marked(h), [], 'no marker before the tree has the keyboard');
+  click(h, 'files-row-a.md');
+  assert.equal(h.mod.treeFocus.is_focused(), true);
+  assert.deepEqual(marked(h), ['a.md']);
+  assert.equal(press(h, 'down'), true);
+  assert.deepEqual(marked(h), ['b.md']);
+  press(h, 'down');
+  assert.deepEqual(marked(h), ['b.md'], 'it stops at the end');
+  press(h, 'k');
+  press(h, 'k');
+  assert.deepEqual(marked(h), ['src']);
+  press(h, 'j');
+  assert.deepEqual(marked(h), ['a.md']);
+  press(h, 'end');
+  assert.deepEqual(marked(h), ['b.md']);
+  press(h, 'home');
+  assert.deepEqual(marked(h), ['src']);
+  assert.deepEqual(h.scrolled.slice(-2), [2, 0], 'the marked row is scrolled into view');
+  assert.equal(press(h, 'x'), false, 'other keys go on to Herdr');
+  assert.equal(press(h, 'escape'), true);
+  assert.deepEqual(marked(h), []);
+  assert.equal(press(h, 'escape'), false, 'with no marker, Escape goes on');
+  const many = await ready({ tree: { '/repo': Array.from({ length: 25 }, (_, i) => ['f', `n${String(i).padStart(2, '0')}.txt`]) } });
+  await many.command('focus');
+  assert.deepEqual(marked(many), ['n00.txt'], 'the focus command marks the first row');
+  press(many, 'pagedown');
+  assert.deepEqual(marked(many), ['n10.txt']);
+  press(many, 'pageup');
+  assert.deepEqual(marked(many), ['n00.txt']);
+});
+
+test('right and left open and close folders and step in and out, and Enter opens a file or a folder', async () => {
+  const h = await ready();
+  await h.command('focus');
+  assert.deepEqual(marked(h), ['src']);
+  press(h, 'right');
+  await h.flush();
+  assert.ok(h.mod.folders.has('src'));
+  assert.deepEqual(marked(h), ['src'], 'opening a folder stays on it');
+  press(h, 'l');
+  assert.deepEqual(marked(h), ['src/main.go'], 'then steps into it');
+  press(h, 'h');
+  assert.deepEqual(marked(h), ['src'], 'left goes to the folder above');
+  press(h, 'left');
+  assert.equal(h.mod.folders.has('src'), false, 'and then closes it');
+  press(h, 'enter');
+  await h.flush();
+  assert.ok(h.mod.folders.has('src'), 'Enter opens a folder');
+  press(h, 'down');
+  press(h, 'enter');
+  assert.equal(tabs(h).at(-1)[1].name, 'main.go', 'and opens a file in the shared tab');
+});
+
+test('/ goes to the filter, the arrows there move through the matches, and Enter opens the marked one', async () => {
+  const h = await ready();
+  await h.command('focus');
+  assert.equal(press(h, '/'), true);
+  assert.equal(h.mod.filter.focused, true);
+  assert.deepEqual(marked(h), [], 'the tree has let go of the keyboard');
+  await typeFilter(h, 'mai');
+  assert.deepEqual(rowIds(h), ['files-row-src', 'files-row-src/main.go']);
+  assert.equal(keyOn(h, 'files-filter', 'down'), true);
+  assert.deepEqual(marked(h), ['src']);
+  keyOn(h, 'files-filter', 'down');
+  assert.deepEqual(marked(h), ['src/main.go']);
+  h.mod.filter.handlers.submit({}, h.cx);
+  assert.equal(tabs(h).at(-1)[1].name, 'main.go');
+  keyOn(h, 'files-filter', 'up');
+  h.mod.filter.handlers.submit({}, h.cx);
+  await h.flush();
+  assert.equal(h.mod.filter.value(), '', 'Enter on a folder opens it in the tree');
+  assert.ok(find(h.mod.render(), 'files-row-src/main.go'));
+  assert.deepEqual(marked(h), ['src'], 'and the tree takes the keyboard, on that folder');
+});
+
+test('dotfiles hide and show with the eye button or ., in the tree and the matches, and stay that way after a restart', async () => {
+  const tree = { ...TREE, '/repo': [...TREE['/repo'], ['f', '.env'], ['d', '.github']] };
+  const everything = `${EVERY}.env\0.github/ci.yml\0`;
+  const h = await ready({ tree, everything });
+  assert.ok(find(h.mod.render(), 'files-row-.env'));
+  click(h, 'files-tool-dotfiles');
+  assert.equal(find(h.mod.render(), 'files-row-.env'), undefined);
+  assert.equal(find(h.mod.render(), 'files-row-.github'), undefined);
+  assert.equal(h.kept.get('better-files.dotfiles'), 'false');
+  await typeFilter(h, 'ci');
+  assert.match(strings(find(h.mod.render(), 'files-list')), /^No matches\.$/);
+  const again = await ready({ tree, everything, storage: { 'better-files.dotfiles': 'false' } });
+  assert.equal(find(again.mod.render(), 'files-row-.env'), undefined, 'remembered');
+  await again.command('focus');
+  press(again, '.');
+  assert.ok(find(again.mod.render(), 'files-row-.env'));
+  assert.equal(again.kept.get('better-files.dotfiles'), 'true');
+  await typeFilter(again, 'ci');
+  assert.deepEqual(rowIds(again), ['files-row-.github', 'files-row-.github/ci.yml']);
+});
+
+test('collapse all closes every folder, and a marker inside one moves to its top folder', async () => {
+  const h = await ready();
+  await h.command('focus');
+  press(h, 'right');
+  await h.flush();
+  press(h, 'down');
+  assert.deepEqual(marked(h), ['src/main.go']);
+  click(h, 'files-tool-collapse');
+  assert.equal(find(h.mod.render(), 'files-row-src/main.go'), undefined);
+  assert.equal(h.mod.folders.size, 0);
+  assert.deepEqual(marked(h), ['src']);
+  assert.equal(find(h.mod.render(), 'files-tool-collapse').handlers.click, undefined, 'nothing is left to close');
 });

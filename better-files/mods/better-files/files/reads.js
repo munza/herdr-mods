@@ -83,6 +83,7 @@ export const readMethods = {
       this.treeError = null;
       this.indexError = null;
       this.scrollTo = null;
+      this.cursor = null;
       this.watch(cx);
     }
     this.ensureIndex(cx);
