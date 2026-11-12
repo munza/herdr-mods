@@ -50,7 +50,7 @@ async function harness({ settings = {}, tab = null, panes = [], sharedValues = {
     Date, JSON, Map, Set, Math, console,
     View: class {},
     div: element, svg: (p) => element().child(`svg:${p}`), image: element, v_flex: element, h_flex: element,
-    Popover: { new: element },
+    Popover: { new: (id) => element().id(id) },
     spaces: () => spaces,
     agents: () => agents,
     terminals: () => [],
@@ -149,3 +149,15 @@ test("a mod's tab shows the icon the mod publishes, and a tab with neither keeps
   const { mod: bare } = await harness();
   assert.doesNotMatch(text(find(bare.render(), "tab-d")), /svg:/);
 });
+
+test("the Spaces tab offers the space sort beside New space, and Agents its own sort", async () => {
+  const { mod } = await harness({ tab: "spaces" });
+  const tree = mod.render();
+  assert.ok(find(tree, "space-sort-menu"), "space sort on Spaces");
+  assert.ok(find(tree, "space-new"));
+  const { mod: agentsTab } = await harness({ tab: "agents" });
+  const other = agentsTab.render();
+  assert.equal(find(other, "space-sort-menu"), undefined);
+  assert.ok(find(other, "ag-sort-menu"));
+});
+
