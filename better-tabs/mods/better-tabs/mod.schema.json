@@ -87,7 +87,7 @@
             },
             "auto_name": {
               "title": "Name tabs",
-              "description": "Names a tab nobody named, once, after what runs in it: an agent or program by its name, a shell by its folder. Your own names stay; renaming a tab to nothing hands it back.",
+              "description": "Tabs follow what runs in them: an agent's topic, else its name, a shell's folder, another program's name. Your own names stay; renaming a tab to nothing hands it back.",
               "type": "boolean",
               "default": true
             }

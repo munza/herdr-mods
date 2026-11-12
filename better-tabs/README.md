@@ -10,7 +10,7 @@ A tab bar for [Herdr Desktop](https://herdr.dev/): tabs you can drag, that wrap 
 - **Drag panel buttons** (Files, Changes and any you add) to reorder them, the same way.
 - **The ⋮ menu:** drop a panel button on it to hide it. Click **⋮** to see hidden buttons, then click one to use it, drag it back out, or click its **pin** to return it to the toolbar. The menu also holds buttons there's no room for.
 - Double-click to rename, right-click for the tab menu, and close the active tab with its ×.
-- **Tabs name themselves** once, if you haven't named them: an agent or program by its name (Claude Code, Codex, Pi, Neovim), a shell by its folder. Your own names stay, and renaming a tab to nothing hands it back.
+- **Tabs name themselves** and keep up: an agent by its conversation topic, the title Herdr gets from it, or its name until it has one; a shell by its folder; another program by its name (Neovim). Your own names stay, and renaming a tab to nothing hands it back.
 - Program icons, working spinners and blocked or done dots.
 - Each space remembers which panel it had open.
 - Window controls where the system needs them.
@@ -76,7 +76,7 @@ Add a `settings` block to the installed `mods/better-tabs/mod.json` with only wh
 "settings": { "tabs": { "max_width": 170, "drag_delay": "400ms", "auto_name": true }, "menu": { "width": 240 } }
 ```
 
-`tabs.max_width` caps a tab's width in pixels. `tabs.drag_delay` is how long a press must last before a drag can start. `tabs.auto_name: false` leaves unnamed tabs with their numbers. `menu.width` sizes the ⋮ menu.
+`tabs.max_width` caps a tab's width in pixels. `tabs.drag_delay` is how long a press must last before a drag can start. `tabs.auto_name: false` turns tab names off. `menu.width` sizes the ⋮ menu.
 
 ## Upgrading from 2.x
 
