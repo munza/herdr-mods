@@ -9,6 +9,8 @@ const INDEX_DEPTH = 12;
 const SHALLOW_DEPTH = 5;
 const SHALLOW_ROOT = /^\/(?:(?:home|Users)\/[^/]+|root)?$/;
 const REINDEX_MS = 30000;
+// A folder that keeps changing, such as one an agent is writing in, is read again at most this often.
+const RESTALE_MS = 5000;
 const SKIPPED = [".git", "node_modules", ".venv", "__pycache__", "target", "dist", ".next"];
 
 // Every file under the folder, for the filter: Git's own list where there is one, so ignored
@@ -79,6 +81,8 @@ export const readMethods = {
       this.marks = {};
       this.top = null;
       this.treeError = null;
+      this.indexError = null;
+      this.scrollTo = null;
       this.watch(cx);
     }
     this.ensureIndex(cx);
@@ -159,12 +163,23 @@ export const readMethods = {
   },
 
   // The filter's list of every file, read when it's first needed, again once the folder
-  // changes on disk, and at most every 30 seconds for a folder that can't be watched.
+  // changes on disk but at most every 5 seconds, and every 30 for a folder that can't be watched.
   ensureIndex(cx) {
     const { root, on, key } = this;
     if (!root || !this.filterText() || this.indexing === key) return;
     const index = this.index?.key === key ? this.index : null;
-    if (index && !index.stale && Date.now() - index.at < REINDEX_MS) return;
+    const age = index ? Date.now() - index.at : Infinity;
+    if (index && age < (index.stale ? RESTALE_MS : REINDEX_MS)) {
+      // The last change before a quiet spell still gets read, once the wait is over.
+      if (index.stale && !this.reindexLater) {
+        this.reindexLater = true;
+        cx.timer.after(RESTALE_MS - age, (cx) => {
+          this.reindexLater = false;
+          this.ensureIndex(cx);
+        });
+      }
+      return;
+    }
     this.indexing = key;
     cx.spawn(async (cx) => {
       try {

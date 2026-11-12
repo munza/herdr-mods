@@ -23,12 +23,12 @@ function world({ everything = EVERY, found = '', copyImage, diff = '', layout = 
   const store = new Map(Object.entries(sharedInit));
   const ran = [], execs = [], sent = [], clipboard = [], closed = [], overlays = [], urls = [], scrolled = [];
   const live = { layout, panes: [{ pane: 'p1', tab: 'tab1', cwd }], focused: { space: 's', tab: 'tab1', pane: 'p1', cwd }, agents, texts: { ...texts } };
-  const timers = [];
+  const timers = [], later = [];
   const pending = [];
   const cx = {
     focus_handle: () => ({ focus() {} }), stop_propagation() {}, notify() {},
     spawn(fn) { const p = fn(cx); pending.push(p); return p; },
-    timer: { every: (_ms, fn) => timers.push(fn), after() {} },
+    timer: { every: (_ms, fn) => timers.push(fn), after: (ms, fn) => later.push([ms, fn]) },
     write_to_clipboard: (text) => clipboard.push(text),
     open_url: (url) => urls.push(url),
   };
@@ -94,7 +94,7 @@ function world({ everything = EVERY, found = '', copyImage, diff = '', layout = 
   const mod = new context.Mod();
   mod.init({}, cx);
   const flush = async () => { for (let i = 0; i < 25; i++) await new Promise(setImmediate); };
-  return { mod, cx, store, ran, execs, sent, clipboard, closed, overlays, urls, scrolled, live, context, flush, tick: () => { for (const fn of timers) fn(cx); } };
+  return { mod, cx, store, ran, execs, sent, clipboard, closed, overlays, urls, scrolled, later, live, context, flush, tick: () => { for (const fn of timers) fn(cx); } };
 }
 const ready = async (o) => { const h = world(o); await h.flush(); return h; };
 const find = (node, id) => (node?.elementId === id ? node : node?.nodes?.map((n) => find(n, id)).find(Boolean));
@@ -783,6 +783,7 @@ test('the list is read again when it is old, and a failed read says why', async 
   h.tick();
   await h.flush();
   assert.equal(h.execs.filter((e) => e.includes('ls-files')).length, 2);
+  h.mod.index.at = Date.now() - 6000;
   h.mod.index.stale = true;
   h.mod.refresh(h.cx);
   await h.flush();
@@ -791,4 +792,51 @@ test('the list is read again when it is old, and a failed read says why', async 
   broken.context.exec = async () => ({ code: 1, stdout: '', stderr: 'find: permission denied' });
   await typeFilter(broken, 'x');
   assert.match(strings(find(broken.mod.render(), 'files-list')), /^find: permission denied$/);
+});
+
+test('a busy folder reads the list again at most every 5 seconds, and catches up after', async () => {
+  const h = await ready();
+  await typeFilter(h, 'main');
+  const reads = () => h.execs.filter((e) => e.includes('ls-files')).length;
+  assert.equal(reads(), 1);
+  for (let i = 0; i < 3; i++) {
+    h.mod.index.stale = true;
+    h.mod.refresh(h.cx);
+    await h.flush();
+  }
+  assert.equal(reads(), 1);
+  assert.equal(h.later.length, 1);
+  assert.ok(h.later[0][0] > 4000 && h.later[0][0] <= 5000, `waits ${h.later[0][0]} ms`);
+  h.mod.index.at = Date.now() - 6000;
+  h.later[0][1](h.cx);
+  await h.flush();
+  assert.equal(reads(), 2);
+  assert.equal(h.mod.index.stale, false);
+  h.mod.index.stale = true;
+  h.mod.refresh(h.cx);
+  assert.equal(h.later.length, 2, 'the next busy spell waits too');
+});
+
+test('a folder picked from the matches opens even while the tree is still loading', async () => {
+  const h = await ready();
+  await typeFilter(h, 'sr');
+  h.mod.loading = h.mod.key;
+  click(h, 'files-row-src');
+  await h.flush();
+  assert.ok(find(h.mod.render(), 'files-row-src/main.go'), 'the folder has its files');
+});
+
+test('moving to another folder drops the last one\'s filter error and the folder it was to scroll to', async () => {
+  const tree = { ...TREE, '/elsewhere': [['d', 'src']], '/elsewhere/src': [] };
+  const h = await ready({ tree });
+  await typeFilter(h, 'sr');
+  click(h, 'files-row-src');
+  h.mod.indexError = 'find: permission denied';
+  h.live.panes[0].cwd = '/elsewhere';
+  h.live.focused.cwd = '/elsewhere';
+  h.tick();
+  assert.equal(h.mod.indexError, null);
+  await h.flush();
+  h.mod.render();
+  assert.deepEqual(h.scrolled, []);
 });

@@ -32,12 +32,22 @@ export const filterMethods = {
     if (hit) this.openFile(this.fileOf(hit.path), cx);
   },
 
-  // A folder picked from the matches opens in the tree, with the filter cleared.
+  // A folder picked from the matches opens in the tree, with the filter cleared. Its folders
+  // are read here, as a click on a chevron does: a refresh skips a tree that is still loading.
   revealFolder(relative, cx) {
-    for (const folder of foldersTo(relative, true)) this.folders.add(folder);
+    const { root, on, key } = this;
+    const folders = foldersTo(relative, true);
+    for (const folder of folders) this.folders.add(folder);
     this.scrollTo = relative;
     this.clearFilter(cx);
-    this.refresh(cx);
+    cx.spawn(async (cx) => {
+      try {
+        for (const folder of folders) await this.loadFolder(folder, root, on, key);
+      } catch (e) {
+        if (this.key === key) this.treeError = e.message ?? String(e);
+      }
+      cx.notify();
+    });
   },
 
   filterRow(t) {
