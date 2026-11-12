@@ -51,6 +51,7 @@ async function harness({ settings = {}, tab = null, panes = [], sharedValues = {
     View: class {},
     div: element, svg: (p) => element().child(`svg:${p}`), image: element, v_flex: element, h_flex: element,
     Popover: { new: element },
+    ScrollHandle: { new: () => ({ scroll_to_item() {} }) },
     spaces: () => spaces,
     agents: () => agents,
     terminals: () => [],
