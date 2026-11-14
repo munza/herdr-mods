@@ -6,6 +6,7 @@
 //   views/drags.js         dragging tabs and toolbar actions
 //   views/tab-bar.js       the bar: tabs, +, toolbar, ⋮
 //   views/menu.js          the ⋮ menu and toolbar action buttons
+//   actions/names.js       naming a tab nobody named, once
 // actions/ holds the logic with no drawing, views/ui.js the shared look.
 import { View } from "gpui-kit";
 import { shared, setShared, nextCommand, props, notify } from "herdr";
@@ -16,9 +17,10 @@ import { arrangementMethods } from "./views/arrangement.js";
 import { dragMethods, DRAG_KEY, DRAG_TIMEOUT_MS } from "./views/drags.js";
 import { tabBarMethods } from "./views/tab-bar.js";
 import { menuMethods } from "./views/menu.js";
+import { nameMethods } from "./actions/names.js";
 
 // Preferences a person may change in the installed mod.json under `settings`.
-const DEFAULT_SETTINGS = { tabs: { max_width: 170, drag_delay: "400ms" }, menu: { width: 240 } };
+const DEFAULT_SETTINGS = { tabs: { max_width: 170, drag_delay: "400ms", auto_name: true }, menu: { width: 240 } };
 
 const DEFAULTS = {
   rememberPanels: { container: "panel", stack: "panel-body" },
@@ -68,6 +70,7 @@ class Tabs extends View {
       this.syncPanel();
       cx.timer.every(300, () => {
         this.syncPanel();
+        this.nameTabs();
         const drag = shared(DRAG_KEY);
         if (drag?.scope === this.toolbarScope() && Date.now() - drag.at > DRAG_TIMEOUT_MS)
           setShared(DRAG_KEY, null);
@@ -105,6 +108,7 @@ Object.assign(
   dragMethods,
   tabBarMethods,
   menuMethods,
+  nameMethods,
 );
 
 export default Tabs;
