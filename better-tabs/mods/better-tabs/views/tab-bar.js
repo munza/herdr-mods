@@ -39,8 +39,13 @@ export const tabBarMethods = {
         ? svg(program.icon).size(14).text_color(t.muted)
         : image(program.icon).size(14);
     }
-    // Mod panes carry no program, but a mod may publish an icon for itself.
-    const modIcon = shared("mod-icons")?.[mine.find((p) => p.mod)?.mod];
+    // Mod panes carry no program. A pane may publish its own icon in shared("pane-heads"), as a
+    // Better Files or Better Changes tab does for its file, with color: true for a full-colour
+    // picture; else the mod may publish an icon for itself.
+    const modPane = mine.find((p) => p.mod);
+    const head = modPane && shared("pane-heads")?.[modPane.pane];
+    if (head?.icon) return head.color ? image(head.icon).size(14) : svg(head.icon).size(14).text_color(t.muted);
+    const modIcon = shared("mod-icons")?.[modPane?.mod];
     return modIcon ? svg(modIcon).size(14).text_color(t.muted) : null;
   },
 

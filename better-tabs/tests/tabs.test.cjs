@@ -541,6 +541,26 @@ test("mod tabs get the icon the mod published, program icons win, unknown mods g
   assert.ok(paths.includes("icons/claude.svg"));
 });
 
+test("a mod tab shows its pane's own published icon before the mod's, in colour when it says so", () => {
+  const h = harness({ buttons: [] });
+  const drawn = [];
+  h.context.svg = (p) => (drawn.push(`svg:${p}`), h.context.div());
+  h.context.image = (p) => (drawn.push(`image:${p}`), h.context.div());
+  h.data["mod-icons"] = { "better-files": "mods/better-files/icons/file.svg" };
+  h.data["pane-heads"] = { p1: { title: "main.js", icon: "mods/better-icons/icons/javascript.svg", color: true } };
+  h.setPanes([{ tab: "t1", pane: "p1", mod: "better-files" }]);
+  h.tabs.render(h.cx);
+  assert.deepEqual(drawn.filter((d) => !d.includes("mods/better-tabs/")), ["image:mods/better-icons/icons/javascript.svg"]);
+  drawn.length = 0;
+  h.data["pane-heads"] = { p1: { title: "main.js", icon: "mods/better-files/icons/file.svg" } };
+  h.tabs.render(h.cx);
+  assert.deepEqual(drawn.filter((d) => !d.includes("mods/better-tabs/")), ["svg:mods/better-files/icons/file.svg"]);
+  drawn.length = 0;
+  h.data["pane-heads"] = { p9: { icon: "mods/better-icons/icons/javascript.svg", color: true } };
+  h.tabs.render(h.cx);
+  assert.deepEqual(drawn.filter((d) => !d.includes("mods/better-tabs/")), ["svg:mods/better-files/icons/file.svg"]);
+});
+
 test("the bar grows with wrapped tabs, once per height, on the right layout node", () => {
   const h = harness();
   h.tabs.fitHeight({ width: 900, height: 29 });

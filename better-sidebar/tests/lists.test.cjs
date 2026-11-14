@@ -49,7 +49,7 @@ async function harness({ settings = {}, tab = null, panes = [], sharedValues = {
   const context = {
     Date, JSON, Map, Set, Math, console,
     View: class {},
-    div: element, svg: (p) => element().child(`svg:${p}`), image: element, v_flex: element, h_flex: element,
+    div: element, svg: (p) => element().child(`svg:${p}`), image: (p) => element().child(`image:${p}`), v_flex: element, h_flex: element,
     Popover: { new: element },
     spaces: () => spaces,
     agents: () => agents,
@@ -133,6 +133,28 @@ test("in Spaces a pinned agent sits above every space", async () => {
   const order = ids(mod.render()).filter((id) => /^(space-(shop|docs)|ag-t\d)$/.test(id));
   assert.deepEqual(order, ["ag-t3", "space-shop", "ag-t1", "space-docs", "ag-t2"]);
 
+});
+
+test("a mod's tab shows its pane's own published icon before the mod's, in colour when it says so", async () => {
+  const panes = [{ pane: "pd", tab: "d", mod: "better-files" }];
+  const modIcons = { "better-files": "mods/better-files/icons/file.svg" };
+  const { mod } = await harness({
+    panes,
+    sharedValues: { "mod-icons": modIcons, "pane-heads": { pd: { icon: "mods/better-icons/icons/javascript.svg", color: true } } },
+  });
+  const row = text(find(mod.render(), "tab-d"));
+  assert.match(row, /image:mods\/better-icons\/icons\/javascript\.svg/);
+  assert.doesNotMatch(row, /svg:mods\/better-files/);
+  const { mod: plain } = await harness({
+    panes,
+    sharedValues: { "mod-icons": modIcons, "pane-heads": { pd: { icon: "mods/better-changes/icons/file.svg" } } },
+  });
+  assert.match(text(find(plain.render(), "tab-d")), /svg:mods\/better-changes\/icons\/file\.svg/);
+  const { mod: other } = await harness({
+    panes,
+    sharedValues: { "mod-icons": modIcons, "pane-heads": { p9: { icon: "mods/better-icons/icons/javascript.svg", color: true } } },
+  });
+  assert.match(text(find(other.render(), "tab-d")), /svg:mods\/better-files\/icons\/file\.svg/);
 });
 
 test("an Agents row reads its tab's title, then its space", async () => {
