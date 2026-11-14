@@ -1031,3 +1031,69 @@ test('syntax.js is the same file in Better Files and Better Changes', () => {
   const read = (mod) => fs.readFileSync(path.join(__dirname, `../../${mod}/mods/${mod}/syntax.js`), 'utf8');
   assert.equal(read('better-files'), read('better-changes'));
 });
+
+test('a picture copy that finishes after its tab moved on is replaced later, and one that finishes after the tab closed goes', async () => {
+  const file = { path: '/repo/shot.PNG', root: '/repo', on: null };
+  const copies = (h) => h.execs.filter((e) => e[3] === 'copy-image');
+  const h = await ready({ mode: 'viewer', viewer: 'v', file });
+  const exec = h.context.exec;
+  let release;
+  h.context.exec = (bin, args, o) => (args[2] === 'copy-image' ? new Promise((done) => (release = done)) : exec(bin, args, o));
+  h.tick();
+  await h.flush();
+  h.store.set('better-files.viewers', { v: { file: { ...file, path: '/repo/other.jpg' }, tab: 'tab1' } });
+  release({ code: 0, stdout: 'v-222-4.png' });
+  await h.flush();
+  h.context.exec = exec;
+  h.tick();
+  await h.flush();
+  assert.equal(copies(h).at(-1)[4], '/repo/other.jpg');
+  assert.equal(copies(h).at(-1)[8], '/app/mods/better-files/.cache/v-222-4.png', 'the late copy is the one the next replaces');
+  const shut = await ready({ mode: 'viewer', viewer: 'v', file });
+  const shutExec = shut.context.exec;
+  shut.context.exec = (bin, args, o) => (args[2] === 'copy-image' ? new Promise((done) => (release = done)) : shutExec(bin, args, o));
+  shut.tick();
+  await shut.flush();
+  await shut.mod.close();
+  release({ code: 0, stdout: 'v-222-4.png' });
+  await shut.flush();
+  assert.deepEqual(JSON.parse(JSON.stringify(shut.execs.at(-1))), ['rm', '-f', '--', '/app/mods/better-files/.cache/v-222-4.png']);
+});
+
+test('the copy script clears a restarted tab\'s leftovers, and a failed copy leaves nothing half-made', async () => {
+  const { context: m } = await ready();
+  const os = require('node:os');
+  const { spawnSync } = require('node:child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bf-sweep-'));
+  const cache = path.join(dir, '.cache');
+  const run = (args, env) => spawnSync('sh', ['-c', m.COPY_IMAGE, 'copy-image', ...args], { encoding: 'utf8', env: env ?? process.env });
+  const files = () => fs.readdirSync(cache).sort();
+  fs.mkdirSync(cache);
+  for (const name of ['v-1-1.png', 'v-1-1.jpg', 'v-2-2.png.part', 'v-m1-3-3.png', 'w-4-4.png']) fs.writeFileSync(path.join(cache, name), 'old');
+  const src = path.join(dir, 'a.png');
+  fs.writeFileSync(src, 'one');
+  const first = run([src, cache, 'v', 'png', '']);
+  assert.equal(first.status, 0);
+  assert.deepEqual(files(), [first.stdout, 'v-m1-3-3.png', 'w-4-4.png'].sort(), 'only this start\'s copies go, not its Markdown pictures or another tab\'s');
+  fs.writeFileSync(path.join(cache, 'v-9-9.png'), 'old');
+  fs.writeFileSync(src, 'two!');
+  const second = run([src, cache, 'v', 'png', path.join(cache, first.stdout)]);
+  assert.deepEqual(files(), [second.stdout, 'v-9-9.png', 'v-m1-3-3.png', 'w-4-4.png'].sort(), 'with a copy to replace, only that one goes');
+  const bin = path.join(dir, 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'cp'), '#!/bin/sh\nprintf half > "$3"\nexit 1\n', { mode: 0o755 });
+  fs.writeFileSync(src, 'three');
+  const failed = run([src, cache, 'v', 'png', path.join(cache, second.stdout)], { ...process.env, PATH: `${bin}:${process.env.PATH}` });
+  assert.equal(failed.status, 1);
+  assert.deepEqual(files(), [second.stdout, 'v-9-9.png', 'v-m1-3-3.png', 'w-4-4.png'].sort(), 'no part left, and the shown copy stays');
+  fs.rmSync(dir, { recursive: true });
+});
+
+test('with no tab shown, the tree takes a terminal in the space, not a pane from elsewhere', async () => {
+  const h = await ready({ spaceFolder: '/made-here' });
+  h.live.panes.splice(0, h.live.panes.length, { pane: 'x', space: 'other', cwd: '/elsewhere' }, { pane: 'p2', tab: 'tab1', cwd: '/repo/src' });
+  h.live.focused = { space: 's', tab: 'tab1', pane: 'gone', cwd: null };
+  h.mod.place = null;
+  h.tick();
+  assert.equal(h.mod.root, '/repo/src');
+});

@@ -20,10 +20,10 @@ async function directory(path, on) {
 // space's own folder is where it was made, which its terminals may have long left.
 function liveFolder(space) {
   const tabs = space?.tabs ?? [];
-  const shown = tabs.find((t) => t.active)?.id;
-  const order = [shown, ...tabs.map((t) => t.id).filter((id) => id !== shown)];
+  const order = [...tabs.filter((t) => t.active), ...tabs.filter((t) => !t.active)].map((t) => t.id);
+  const all = panes();
   for (const tab of order) {
-    const pane = panes().find((p) => p.tab === tab && p.cwd);
+    const pane = all.find((p) => p.tab === tab && p.cwd);
     if (pane) return pane.cwd;
   }
   return null;

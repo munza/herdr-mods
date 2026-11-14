@@ -44,7 +44,7 @@ Each view calls `followFileIcons(this, cx)` from `files/file-icons.js`, a copy o
 
 ## Watch out
 
-Herdr's shipped layouts are read-only, so the sidebar only shows in a layout the person owns. Never overwrite an unrelated mod on a name clash. `herdr-app check` draws only the sidebar's first frame, so look at the running app too.
+Herdr's shipped layouts are read-only, so the sidebar only shows in a layout the person owns. Never overwrite an unrelated mod on a name clash. `herdr-app check` draws only the sidebar's first frame, so look at the running app too. Before 1.5.2, picture copies went in `mods/better-files/cache/`; when updating from an older version, delete that folder if it's there.
 
 ## Done when
 

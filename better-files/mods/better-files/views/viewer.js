@@ -33,19 +33,23 @@ const REMOVED_ROW = 8;
 // change either, and keeps what it loaded under a name, so a name is never given to other
 // bytes: it's the picture's checksum and size, and a changed picture gets a new one.
 // $1 the file, $2 the cache folder, $3 the name's start, $4 its extension, $5 the copy this one
-// replaces, removed once the new one is in. Prints the copy's name. No file name reaches the
-// script itself, and only the cache's own copies are ever removed. A picture that changes
-// while it's copied exits BUSY and leaves nothing behind, to be copied on the next check.
+// replaces, removed once the new one is in. With no $5, as when a tab starts again after a
+// reload, every other copy under the same start goes instead, so none outlives what tracked
+// it. Prints the copy's name. No file name reaches the script itself, and only the cache's
+// own copies are ever removed. A picture that changes while it's copied exits BUSY, and a
+// copy that fails or is BUSY leaves nothing half-made behind; it's copied on the next check.
 const CACHE = "mods/better-files/.cache";
 const BUSY = 75;
 const COPY_IMAGE = `sum=$(cksum < "$1") || exit 1
 name="$3-\${sum%% *}-\${sum##* }.$4"; copy="$2/$name"
 if [ ! -e "$copy" ]; then
+  trap 'rm -f -- "$copy.part"' EXIT
   mkdir -p -- "$2" && cp -- "$1" "$copy.part" || exit 1
-  [ "$(cksum < "$copy.part")" = "$sum" ] || { rm -f -- "$copy.part"; exit ${BUSY}; }
+  [ "$(cksum < "$copy.part")" = "$sum" ] || exit ${BUSY}
   mv -f -- "$copy.part" "$copy" || exit 1
 fi
-[ -z "$5" ] || [ "$5" = "$copy" ] || rm -f -- "$5"
+if [ -n "$5" ]; then set -- "$5"; else set -- "$2/$3"-[0-9]*; fi
+for old in "$@"; do [ "$old" = "$copy" ] || [ ! -e "$old" ] || rm -f -- "$old"; done
 printf %s "$name"`;
 const extension = (path) => path.split(".").pop().toLowerCase();
 const absolute = (copy) => (copy ? `${appHome()}/${copy}` : "");
@@ -381,6 +385,11 @@ export const viewerMethods = {
       );
   },
 
+  // Removes copies this tab made, given as paths under Herdr's folder.
+  async dropCopies(copies) {
+    if (copies.length) await exec("rm", ["-f", "--", ...copies.map(absolute)], {}).catch(() => {});
+  },
+
   // Herdr only loads images from under its own folder, so the file is shown through a copy
   // in this mod's cache, named for what's in it. The copy it replaces goes once it's in.
   readImage(cx) {
@@ -398,14 +407,15 @@ export const viewerMethods = {
         {},
       ).catch(() => null);
       this.reading = false;
-      if (this.file?.path !== file.path || result?.code === BUSY) return;
       const copy = result?.code === 0 ? `${CACHE}/${result.stdout.trim()}` : null;
+      // Kept even when the tab has moved on, so the next copy replaces it; a closed tab's goes now.
       if (copy) this.imageCopy = copy;
+      if (copy && this.closed) return this.dropCopies([copy]);
+      if (this.file?.path !== file.path || result?.code === BUSY) return;
       const problem = copy ? null : "This file is no longer available.";
-      const shown = copy;
-      if (problem !== this.problem || shown !== this.imageShown) {
+      if (problem !== this.problem || copy !== this.imageShown) {
         this.problem = problem;
-        this.imageShown = shown;
+        this.imageShown = copy;
         cx.notify();
       }
     });
@@ -466,6 +476,7 @@ export const viewerMethods = {
         this.markdownCopying.delete(path);
         if (result?.code === BUSY) return;
         const copy = result?.code === 0 ? `${CACHE}/${result.stdout.trim()}` : null;
+        if (copy && this.closed) return this.dropCopies([copy]);
         if (copy) this.markdownCopies.set(path, copy);
         if (this.markdownShown.get(path) !== Boolean(copy) || copy !== old) {
           this.markdownShown.set(path, Boolean(copy));
