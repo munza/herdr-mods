@@ -28,7 +28,7 @@ function harness() {
     proxy = new Proxy(node, {
       get(target, key) {
         if (key in target) return target[key];
-        if (key === "child")
+        if (key === "child" || key === "trigger" || key === "content")
           return (child) => {
             target.nodes.push(child);
             return proxy;
@@ -59,6 +59,7 @@ function harness() {
   const cx = {
     notify() {},
     stop_propagation() {},
+    focus_handle: () => ({ focus() {} }),
     timer: { every() {} },
     spawn(fn) {
       pending.push(fn(cx));
@@ -67,7 +68,11 @@ function harness() {
   const context = {
     View: class {},
     div: element,
-    svg: element,
+    svg: (p) => {
+      const e = element();
+      e.svgPath = p;
+      return e;
+    },
     h_flex: element,
     v_flex: element,
     spaces: () => live.spaces,
@@ -77,7 +82,7 @@ function harness() {
     layout: () => ({ id: "sidebar", size: { px: 268 } }),
     window: () => ({ active: true }),
     props: () => ({}),
-    Popover: { new: element },
+    Popover: { new: (id) => element().id(id) },
     shared: (key) => values[key],
     setShared: (key, value) => {
       values[key] = value;
@@ -566,6 +571,8 @@ test("package is standalone with local icons and no layout or helper dependency"
     "draft",
     "merged",
     "closed",
+    "grip-vertical",
+    "arrow-down-a-z",
   ]) {
     assert.ok(fs.existsSync(path.join(runtime, `icons/${icon}.svg`)), icon);
   }
@@ -614,3 +621,105 @@ test("spaces publish each space's main space for the agents block", () => {
   );
   assert.equal(parents.plain, undefined, "not a repository");
 });
+
+// Space sorting. Times are when something in a tab last changed state, as Herdr gives them.
+const tab = (id, changed_at = null, working_since = null) => ({ id, changed_at, working_since });
+function sortable() {
+  const h = harness();
+  h.live.spaces = [
+    { id: "trails", name: "trails", folder: "/trails", tabs: [tab("t1", 100)] },
+    { id: "maps", name: "Maps", folder: "/maps", tabs: [tab("t2", null), tab("t3", 300)] },
+    { id: "quiet", name: "quiet", folder: "/quiet", tabs: [tab("t4")] },
+    { id: "api", name: "api", folder: "/api", tabs: [tab("t5", 200)] },
+    { id: "idle", name: "Idle", folder: "/idle", tabs: [] },
+  ];
+  for (const sp of h.live.spaces) h.mod.shown.add(sp.id);
+  return h;
+}
+const ids = (h) => Array.from(h.mod.ordered(), (r) => r.w.id);
+
+test("spaces keep Herdr's order until a sort is picked", () => {
+  const h = sortable();
+  assert.deepEqual(ids(h), ["trails", "maps", "quiet", "api", "idle"]);
+  h.values["spaces.sort"] = "nonsense";
+  assert.deepEqual(ids(h), ["trails", "maps", "quiet", "api", "idle"]);
+});
+
+test("Recent puts the space with the latest change first, and quiet ones after in Herdr's order", () => {
+  const h = sortable();
+  h.values["spaces.sort"] = "recent";
+  assert.deepEqual(ids(h), ["maps", "api", "trails", "quiet", "idle"]);
+  h.live.spaces[2].tabs[0].working_since = 400;
+  assert.deepEqual(ids(h), ["quiet", "maps", "api", "trails", "idle"]);
+});
+
+test("Name sorts A to Z, case aside", () => {
+  const h = sortable();
+  h.values["spaces.sort"] = "name";
+  assert.deepEqual(ids(h), ["api", "idle", "maps", "quiet", "trails"]);
+});
+
+test("a worktree stays under its main space, which sorts by the latest change in either", () => {
+  const h = harness();
+  h.live.spaces = [
+    { id: "main", name: "repo", folder: "/repo", tabs: [tab("a", 10)] },
+    { id: "other", name: "other", folder: "/other", tabs: [tab("b", 50)] },
+    { id: "child", name: "feature", folder: "/tree", tabs: [tab("c", 90)] },
+  ];
+  for (const sp of h.live.spaces) h.mod.shown.add(sp.id);
+  h.mod.git['[null,"/repo"]'] = { repo: '[null,"/repo/.git"]', linked: false, branch: "main" };
+  h.mod.git['[null,"/tree"]'] = { repo: '[null,"/repo/.git"]', linked: true, branch: "feature" };
+  h.values["spaces.sort"] = "recent";
+  const rows = h.mod.ordered();
+  assert.deepEqual(Array.from(rows, (r) => r.w.id), ["main", "child", "other"]);
+  assert.equal(rows[0].kids, 1);
+  assert.ok(rows[1].tree);
+  h.values["spaces.sort"] = "name";
+  assert.deepEqual(ids(h), ["other", "main", "child"]);
+});
+
+test("the sort menu sits beside New space, shows the choice, and remembers a pick", () => {
+  const h = sortable();
+  const header = h.mod.header(h.colors, false);
+  const trigger = find(header, "space-sort");
+  assert.ok(trigger, "the menu's button is in the header");
+  assert.ok(find(header, "space-new"), "beside New space");
+  h.mod.sortOpen = true;
+  const open = h.mod.header(h.colors, false);
+  assert.match(text(find(open, "space-sort-menu-body")), /Sort spaces\s+Manual\s+Recent\s+Name/);
+  const checked = (tree, id) => JSON.stringify(find(tree, id), (k, v) => (k === "svgPath" || typeof v !== "string" ? v : undefined)).includes("icons/check.svg");
+  const icon = (tree) => JSON.stringify(find(tree, "space-sort")).match(/icons\/([a-z-]+)\.svg/)?.[1];
+  assert.ok(checked(open, "space-sort-manual") && !checked(open, "space-sort-recent"), "Manual is ticked");
+  assert.equal(icon(open), "grip-vertical");
+  find(open, "space-sort-recent").handlers.click({}, h.cx);
+  assert.equal(h.values["spaces.sort"], "recent");
+  assert.equal(h.mod.sortOpen, false);
+  h.mod.sortOpen = true;
+  const after = h.mod.header(h.colors, false);
+  assert.ok(checked(after, "space-sort-recent") && !checked(after, "space-sort-manual"), "Recent is ticked");
+  assert.equal(icon(after), "clock");
+  assert.deepEqual(ids(h), ["maps", "api", "trails", "quiet", "idle"]);
+});
+
+test("dragging moves a space only in Herdr's order; sorted, a press just selects", () => {
+  const h = sortable();
+  const drag = (from, to) => {
+    const rows = h.mod.ordered();
+    const tree = h.mod.body(h.colors, false);
+    find(tree, `space-${rows[from].w.id}`).handlers.mouse_down_left({}, h.cx);
+    find(tree, `space-${rows[to].w.id}`).handlers.mouse_move({}, h.cx);
+    find(h.mod.body(h.colors, false), `space-${rows[to].w.id}`).handlers.mouse_up_left({}, h.cx);
+  };
+  drag(0, 3);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.commands.at(-1))), { name: "space.move", args: { id: "trails", index: 4 } });
+  h.commands.length = 0;
+  h.values["spaces.sort"] = "recent";
+  drag(0, 2);
+  assert.equal(h.commands.length, 0);
+  const first = h.mod.ordered()[0].w.id;
+  const tree = h.mod.body(h.colors, false);
+  find(tree, `space-${first}`).handlers.mouse_down_left({}, h.cx);
+  find(h.mod.body(h.colors, false), `space-${first}`).handlers.mouse_up_left({}, h.cx);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.commands)), [{ name: "space.select", args: { id: "maps" } }]);
+});
+
