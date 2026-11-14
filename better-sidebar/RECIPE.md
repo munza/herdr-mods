@@ -16,7 +16,7 @@ When other machines are known, add a 26px machine header with a monitor/server i
 
 ## How it behaves
 
-Click a row to select its space. Cmd-click the PR number on macOS (Ctrl-click on Linux/Windows) to open its GitHub URL in the default browser using the event context's open_url. Plain clicks on the number still select the space. Stop propagation of modified mouse-down, mouse-up, and click events so the enclosing row neither starts a drag nor changes selection when opening a link. Right-click opens Herdr's shipped space menu. Drag rows to reorder within a machine, never across machines. Plus creates a space; machine plus creates one there. Store folded machine state locally. Share only the existing `space.colors` avatar preferences with Herdr's menus. Do not write shared state from render.
+Click a row to select its space. Cmd-click the PR number on macOS (Ctrl-click on Linux/Windows) to open its GitHub URL in the default browser using the event context's open_url. Plain clicks on the number still select the space. Stop propagation of modified mouse-down, mouse-up, and click events so the enclosing row neither starts a drag nor changes selection when opening a link. Right-click opens Herdr's shipped space menu. Drag rows to reorder within a machine, never across machines. The list's `ScrollHandle`, attached with `track_scroll`, brings the last row under the shown space (else its own row) into view with `scroll_to_item` once each time the shown space changes, as from a key, so the space and its tabs both show; the index counts every row drawn above it (pinned agents, machine headers, other spaces' tabs). A space that isn't listed, as in a folded machine, waits until it is. Plus creates a space; machine plus creates one there. Store folded machine state locally. Share only the existing `space.colors` avatar preferences with Herdr's menus. Do not write shared state from render.
 
 Use the first terminal's live cwd for each space, falling back to its stored folder. Resolve the Git common directory to associate worktree spaces with an open main-checkout space on the same machine; an orphan worktree remains top-level. Newly appearing spaces wait briefly for metadata to avoid jumping between positions.
 
@@ -64,4 +64,5 @@ A `settings` block in the installed `mods/better-sidebar/mod.json` carries the p
 - Cached reads do not cause redraw loops; branch switches/removal discard stale responses.
 - Cmd-clicking a PR number opens its URL without selecting/dragging the row; ordinary clicks still select the space. Draft rows omit their text label but retain their icon, color, and tooltip.
 - Clicking, space menus, same-machine drag reorder, folded machines, and the compact rail still work.
+- Switching to a space below the fold from the keyboard scrolls the list to it.
 - Installation replaces only the spaces block and leaves the person's existing workflow and bindings intact.
