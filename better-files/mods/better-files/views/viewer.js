@@ -15,9 +15,9 @@ import {
   parentOf,
   parseHunks,
   resolvePath,
-  tokenize,
   viewable,
 } from "../files/model.js";
+import { WHOLE_FILE_LINES, highlightLines, languageOf as lexerLanguage, syntaxColors, tokenizeLine } from "../syntax.js";
 import { viewerEntries } from "../actions/open.js";
 import { foundEditors } from "../actions/outside.js";
 import { fileIcon, isLight } from "../files/file-icons.js";
@@ -59,17 +59,33 @@ export const viewerMethods = {
   // Runs as the tab opens, which is when the focused tab is its own.
   claimTab() {
     const entry = this.viewerEntry();
-    if (entry?.tab) return;
+    const where = this.tabSpaces();
+    const holds = (other) => Boolean(other.tab) && !this.wrongTab(other, where);
+    // A tab recorded from another space isn't this one, so it keeps looking for its own.
+    if (entry && holds(entry)) return;
+    const space = entry?.space ?? this.viewerSpace;
     const tab = focused()?.tab;
     if (!tab || !panes().some((p) => p.tab === tab && p.mod === "better-files")) return;
+    // Focus can sit in another space while this tab opens; that space's tab isn't this one.
+    if ((where.get(tab) ?? space) !== space) return;
+    const rest = Object.entries(viewerEntries()).filter(([id]) => id !== this.viewerId).map(([, other]) => other);
     // A tab reopened behind another one must not take that one's place.
-    if (Object.values(viewerEntries()).some((other) => other.tab === tab)) return;
+    if (rest.some((other) => holds(other) && other.tab === tab)) return;
     if (entry?.others?.includes(tab)) return;
+    // Nor may it take the tab of a viewer here asked for after it, which hasn't claimed one yet.
+    const unclaimed = (other) => (other.tab ? !holds(other) : this.viewerIsLive(other));
+    const newer = (other) => other.space === space && (other.at ?? 0) > (entry?.at ?? 0) && unclaimed(other);
+    if (rest.some((other) => newer(other) && other.others && !other.others.includes(tab))) return;
+    // A click skips a viewer while its tab is wrong, so the space may have a new shared tab
+    // by now; then this one becomes a tab you keep, leaving one shared tab per space.
+    const sharedHere = rest.some(
+      (other) => other.space === space && other.preview && this.viewerIsLive(other) && !this.wrongTab(other, where),
+    );
     this.setViewer(this.viewerId, {
       tab,
-      space: entry?.space ?? this.viewerSpace,
+      space,
       file: entry?.file ?? this.viewerFile,
-      preview: entry?.preview ?? false,
+      preview: (entry?.preview ?? false) && !sharedHere,
     });
   },
 
@@ -167,6 +183,9 @@ export const viewerMethods = {
         type: t.ansi3,
         number: t.ansi1,
         constant: t.ansi6,
+        boolean: t.ansi6,
+        operator: t.ansi6,
+        "string.escape": t.ansi6,
       },
     });
   },
@@ -188,7 +207,9 @@ export const viewerMethods = {
   },
 
   publishHead() {
-    const tab = this.viewerEntry()?.tab;
+    // Never onto a tab in another space: that one has its own viewer.
+    const entry = this.viewerEntry();
+    const tab = entry && !this.wrongTab(entry) ? entry.tab : null;
     const pane = tab && panes().find((p) => p.mod === "better-files" && p.tab === tab)?.pane;
     const head = this.viewerHead();
     if (!pane || !head) return;
@@ -209,7 +230,7 @@ export const viewerMethods = {
   // and marks laid over it slid as it scrolled, but here a line's colour is part of its row.
   linesView() {
     const lines = this.fileLines();
-    const language = languageOf(this.file.path);
+    const runs = this.lineRuns(lines);
     const rows = buildRows(lines, this.hunks ?? [], this.openHunks);
     const height = rowHeight();
     const sized = rows.some((row) => row.type === "removed")
@@ -221,7 +242,7 @@ export const viewerMethods = {
       rows.length,
       sized,
       (i) => rows[i].key,
-      (range) => rows.slice(range.start, range.end).map((row) => this.fileRow(row, language)),
+      (range) => rows.slice(range.start, range.end).map((row) => this.fileRow(row, runs)),
     )
       // A handler per list, not per row: Herdr's virtual lists allow no handlers in a row.
       .on_item_click((key, cx) => this.toggleChange(rows.find((row) => row.key === key), cx))
@@ -268,7 +289,38 @@ export const viewerMethods = {
     return this.lines;
   },
 
-  fileRow(row, language) {
+  // Coloured once per version too, top to bottom, so a comment or string opened on one
+  // line is still one on the next. A huge file, or one the lexer fails on, gets no runs
+  // here: its rows are coloured one at a time as they're drawn (`rowRuns`). The runs are
+  // kept only once they're complete, so a row never shows another file's text.
+  lineRuns(lines) {
+    // Keyed on the path too: two files with the same text share `lines`, not a language.
+    if (this.runsFor !== lines || this.runsPath !== this.file.path) {
+      let runs = null;
+      if (lines.length <= WHOLE_FILE_LINES) {
+        try {
+          runs = highlightLines(lines, lexerLanguage(this.file.path));
+        } catch {}
+      }
+      this.runs = runs;
+      this.runsFor = lines;
+      this.runsPath = this.file.path;
+    }
+    return this.runs;
+  },
+
+  // One row's runs: from the whole-file pass when there is one, else that line on its own.
+  rowRuns(row, lineRuns) {
+    const runs = lineRuns?.[row.number - 1];
+    if (runs) return runs;
+    try {
+      return tokenizeLine(row.text, lexerLanguage(this.file.path)).runs;
+    } catch {
+      return [{ text: row.text, kind: null }];
+    }
+  },
+
+  fileRow(row, lineRuns) {
     const t = theme();
     if (row.type === "removed")
       return h_flex()
@@ -286,8 +338,8 @@ export const viewerMethods = {
       : row.hunk
         ? { added: t.ansi2, changed: open ? t.ansi2 : t.ansi3 }[row.hunk.kind]
         : null;
-    const SYNTAX = { keyword: t.ansi5, string: t.ansi2, comment: t.dim, number: t.ansi1 };
-    const runs = old ? [{ text: row.text, kind: "old" }] : tokenize(row.text, language);
+    const SYNTAX = syntaxColors(t);
+    const runs = old ? [{ text: row.text, kind: "old" }] : this.rowRuns(row, lineRuns);
     return h_flex()
       .id(`viewer-${row.key}`)
       .h(rowHeight())
