@@ -50,7 +50,7 @@ function harness({ storage = new Map(), exec, hc, known = [], home = '/app' } = 
     run: (name, args) => ran.push([name, args]),
     shared: (k) => live.shared[k], setShared: (k, v) => { live.shared[k] = v; },
     home: () => '/home/sam', appHome: () => home, watchFolder: () => new Promise(() => {}), theme: () => new Proxy({}, { get: (_t, k) => String(k) }),
-    layout: () => live.layout, settings: () => ({ font_family: 'Code' }), readTextFile: async (file) => (home === '/app' ? null : fs.readFileSync(file, 'utf8')),
+    layout: () => live.layout, settings: () => ({ font_family: 'Code' }), readTextFile: async (file) => (home === '/app' || !fs.existsSync(file) ? null : fs.readFileSync(file, 'utf8')),
     
     nextCommand: () => new Promise(() => {}), knownAgents: async () => known,
     localStorage: { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) },
@@ -1038,6 +1038,8 @@ test('a merged PR shows a Merged badge where Actions would be', () => {
 });
 
 const FILE = { filename: 'src/a.go', additions: 3, deletions: 1, patch: '@@ -1 +1 @@\n-a\n+b' };
+// The table is read by a task started in init, which the harness doesn't wait for, so wait for it a bounded while.
+const iconsRead = async (h) => { for (let i = 0; i < 100 && !h.mod.fileIcons; i++) await new Promise((done) => setImmediate(done)); };
 const filesHarness = (options = {}) => harness({ ...options, exec: async (_bin, [request]) => ({ code: 0, stdout: JSON.stringify(JSON.parse(request).action === 'files' ? [[FILE]] : {}), stderr: '' }) });
 
 test('the Files tab counts the files, lists them, and opens one on GitHub without Better Changes', async () => {
@@ -1107,8 +1109,7 @@ test('moving to a tab with no terminal, such as a diff, keeps the PR instead of 
 
 test("with Better Icons installed, the Files tab shows each file's and folder's colour icon", async () => {
   const h = filesHarness({ home: path.join(__dirname, '../../better-icons') });
-  // The table is read by a task started in init, which the harness doesn't wait for.
-  await new Promise((done) => setImmediate(done));
+  await iconsRead(h);
   assert.ok(h.mod.fileIcons, 'the table loaded');
   h.mod.pr = PR();
   h.mod.selectSection('files', h.cx);
@@ -1119,7 +1120,7 @@ test("with Better Icons installed, the Files tab shows each file's and folder's 
   click(tree, 'pr-folder-src', h);
   assert.match(strings(find(h.mod.render(), 'pr-folder-src')), /image:mods\/better-icons\/icons\/folder-src\.svg/);
   const plain = filesHarness();
-  await new Promise((done) => setImmediate(done));
+  await iconsRead(plain);
   assert.equal(plain.mod.fileIcons, null, 'no table without Better Icons');
   plain.mod.pr = PR();
   plain.mod.selectSection('files', plain.cx);
@@ -1133,13 +1134,19 @@ test("with Better Icons installed, the Files tab shows each file's and folder's 
 
 test("on a light theme, the Files tab takes Better Icons' light pictures", async () => {
   const toml = { filename: 'Cargo.toml', additions: 1, deletions: 0, patch: '@@ -0,0 +1 @@\n+a' };
-  const h = harness({ home: path.join(__dirname, '../../better-icons'), exec: async (_bin, [request]) => ({ code: 0, stdout: JSON.stringify(JSON.parse(request).action === 'files' ? [[toml]] : {}), stderr: '' }) });
-  await new Promise((done) => setImmediate(done));
+  const rules = { filename: '.cursor/rules.md', additions: 1, deletions: 0, patch: '@@ -0,0 +1 @@\n+a' };
+  const h = harness({ home: path.join(__dirname, '../../better-icons'), exec: async (_bin, [request]) => ({ code: 0, stdout: JSON.stringify(JSON.parse(request).action === 'files' ? [[toml, rules]] : {}), stderr: '' }) });
+  await iconsRead(h);
   h.mod.pr = PR();
   h.mod.selectSection('files', h.cx);
   await h.flush();
   assert.match(strings(find(h.mod.render(), 'pr-file-Cargo.toml')), /image:mods\/better-icons\/icons\/toml\.svg/);
   h.context.theme = () => new Proxy({ background: '#fbf7f0' }, { get: (t, k) => t[k] ?? String(k) });
   assert.match(strings(find(h.mod.render(), 'pr-file-Cargo.toml')), /image:mods\/better-icons\/icons\/toml_light\.svg/);
+  let tree = h.mod.render();
+  assert.match(strings(find(tree, 'pr-folder-.cursor')), /image:mods\/better-icons\/icons\/folder-cursor-open_light\.svg/, 'an open folder takes its light open picture');
+  click(tree, 'pr-folder-.cursor', h);
+  tree = h.mod.render();
+  assert.match(strings(find(tree, 'pr-folder-.cursor')), /image:mods\/better-icons\/icons\/folder-cursor_light\.svg/, 'a closed folder takes its light picture');
 });
 

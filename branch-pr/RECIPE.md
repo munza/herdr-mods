@@ -57,6 +57,7 @@ Herdr's shipped layouts are read-only, so the mod only shows in a layout the per
 - Node tests, Go tests and vet, including the installer's, and `herdr-app check` pass.
 - A missing or logged-out `gh` takes over the panel with what to do, and Try again.
 - Both lists and a PR render without errors with real PRs, all inside the sidebar.
+- With Better Icons installed, the Files tab shows each file's and folder's colour icon, the open one for an open folder and the light ones on a light theme. Without it, files keep the plain icon and folders have none.
 - The stats match GitHub for a failing, a conflicted and a clean PR.
 - A handoff reaches the agent on the PR, and with no agent says so and sends nothing.
 - A merge after a newer push is refused.
