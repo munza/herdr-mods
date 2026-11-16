@@ -157,6 +157,22 @@ test("a mod's tab shows its pane's own published icon before the mod's, in colou
   assert.match(text(find(other.render(), "tab-d")), /svg:mods\/better-files\/icons\/file\.svg/);
 });
 
+test("a split mod tab shows the head any of its panes published", async () => {
+  const { mod } = await harness({
+    panes: [
+      { pane: "pa", tab: "d", mod: "branch-pr" },
+      { pane: "pd", tab: "d", mod: "better-files" },
+    ],
+    sharedValues: {
+      "mod-icons": { "branch-pr": "mods/branch-pr/pull-request.svg" },
+      "pane-heads": { pd: { icon: "mods/better-icons/icons/javascript.svg", color: true } },
+    },
+  });
+  const row = text(find(mod.render(), "tab-d"));
+  assert.match(row, /image:mods\/better-icons\/icons\/javascript\.svg/);
+  assert.doesNotMatch(row, /pull-request/);
+});
+
 test("an Agents row reads its tab's title, then its space", async () => {
   const { mod } = await harness({ tab: "agents" });
   assert.match(text(find(mod.render(), "ag-t1")), /^\s*1\s+shop/);

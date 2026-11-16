@@ -561,6 +561,28 @@ test("a mod tab shows its pane's own published icon before the mod's, in colour 
   assert.deepEqual(drawn.filter((d) => !d.includes("mods/better-tabs/")), ["svg:mods/better-files/icons/file.svg"]);
 });
 
+test("a split mod tab shows the head any of its panes published, and a program pane still leads", () => {
+  const h = harness({ buttons: [] });
+  const drawn = [];
+  h.context.svg = (p) => (drawn.push(`svg:${p}`), h.context.div());
+  h.context.image = (p) => (drawn.push(`image:${p}`), h.context.div());
+  h.data["mod-icons"] = { "branch-pr": "mods/branch-pr/pull-request.svg" };
+  h.data["pane-heads"] = { p2: { icon: "mods/better-icons/icons/javascript.svg", color: true } };
+  h.setPanes([
+    { tab: "t1", pane: "p1", mod: "branch-pr" },
+    { tab: "t1", pane: "p2", mod: "better-files" },
+  ]);
+  h.tabs.render(h.cx);
+  assert.deepEqual(drawn.filter((d) => !d.includes("mods/better-tabs/")), ["image:mods/better-icons/icons/javascript.svg"]);
+  drawn.length = 0;
+  h.setPanes([
+    { tab: "t1", pane: "p2", mod: "better-files" },
+    { tab: "t1", pane: "p3", program: { icon: "icons/zsh.svg", tint: true } },
+  ]);
+  h.tabs.render(h.cx);
+  assert.deepEqual(drawn.filter((d) => !d.includes("mods/better-tabs/")), ["svg:icons/zsh.svg"]);
+});
+
 test("the bar grows with wrapped tabs, once per height, on the right layout node", () => {
   const h = harness();
   h.tabs.fitHeight({ width: 900, height: 29 });

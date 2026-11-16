@@ -607,18 +607,20 @@ export class Agents {
 
   // A tab with no agent, under its space in the lists view: its program and its name.
   tabRow(w, tab, lit, t) {
-    const l = lead(tab);
+    const all = panes();
+    const l = lead(tab, all);
     // The tab's title, as Herdr's tab bar shows it.
     const name = tab.name;
     const prog = l?.program?.name;
-    // A mod's pane runs no program, but the pane may publish its own icon in shared("pane-heads"),
-    // as a file tab does, else the mod may publish one, as Better Tabs reads them.
-    const modPane = panes().find((p) => p.tab === tab.id && p.mod);
-    const head = modPane && shared("pane-heads")?.[modPane.pane];
-    const modIcon = head?.icon ?? shared("mod-icons")?.[modPane?.mod];
-    const pic =
-      icon(l?.program, 16, t.dim) ??
-      (modIcon ? icon({ icon: modIcon, tint: !(head?.icon && head.color) }, 16, t.dim) : null);
+    // A mod's pane runs no program, but any of them may publish its own icon in
+    // shared("pane-heads"), as a file tab does, else the mod may publish one, as Better Tabs reads them.
+    const mods = all.filter((p) => p.tab === tab.id && p.mod);
+    const heads = shared("pane-heads") ?? {};
+    const head = heads[mods.find((p) => heads[p.pane]?.icon)?.pane];
+    const pub = head
+      ? { icon: head.icon, tint: !head.color }
+      : { icon: shared("mod-icons")?.[mods[0]?.mod], tint: true };
+    const pic = icon(l?.program, 16, t.dim) ?? icon(pub, 16, t.dim);
     return h_flex()
       .id(`tab-${tab.id}`)
       .px(8)
