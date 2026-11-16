@@ -76,6 +76,7 @@ function harness(config = {}) {
     settings: () => ({ zoom: 1 }),
     theme: () => ({}),
     nextCommand: () => new Promise(() => {}),
+    home: () => "/home/sam",
     Date,
     console,
   };
@@ -103,7 +104,7 @@ function harness(config = {}) {
     ]
       .map(load)
       .join("\n") +
-      "\nglobalThis.api = {execute, buttons, isActive, find, toolbarPartition, toolbarPreferences, hideToolbarAction, placeToolbarAction, tabMoveIndex, planNames, folderName};",
+      "\nglobalThis.api = {execute, buttons, isActive, find, toolbarPartition, toolbarPreferences, hideToolbarAction, placeToolbarAction, tabMoveIndex, planNames, folderName, cleanName};",
     context,
   );
   const cx = {
@@ -619,6 +620,7 @@ const named = (id, index, name) => ({ id, index, name, named: true });
 // Runs the bar's timer, with Herdr applying each rename by the next tick unless told not to.
 function naming(tabs, panes) {
   const h = harness();
+  h.tabs.settingsReady = true;
   const space = { id: "a", active: true, tabs };
   h.setSpaces([space]);
   h.setPanes(panes);
@@ -652,7 +654,7 @@ test("a tab takes its agent's title, else the agent's name, a program's name, or
   assert.deepEqual(tick(), [
     { id: "t1", name: "Plan the trail map layout" },
     { id: "t2", name: "Install trail maps | Work" },
-    { id: "t3", name: "π - lantern" },
+    { id: "t3", name: "Pi" },
     { id: "t4", name: "Codex" },
     { id: "t5", name: "Claude Code" },
     { id: "t6", name: "lantern" },
@@ -728,14 +730,14 @@ test("in a split tab an agent beats a program, which beats a shell, and the firs
     [
       { pane: "p1", tab: "t1", terminal: "x1", title: "sam@desk", cwd: "/work/lantern", program: SHELL },
       { pane: "p2", tab: "t1", terminal: "x2", title: "nvim", cwd: "/work", program: NVIM },
-      { pane: "p3", tab: "t1", terminal: "x3", title: "π - lantern", cwd: "/work", program: AGENT("Pi") },
+      { pane: "p3", tab: "t1", terminal: "x3", title: "π - lantern", cwd: "/work/lantern", program: AGENT("Pi") },
       { pane: "p4", tab: "t1", terminal: "x4", title: "Fix the login form", cwd: "/work", program: AGENT("Claude Code") },
       { pane: "p5", tab: "t2", terminal: "x5", title: "sam@desk", cwd: "/work/lantern", program: SHELL },
       { pane: "p6", tab: "t2", terminal: "x6", title: "nvim", cwd: "/work", program: NVIM },
     ],
   );
   assert.deepEqual(tick(), [
-    { id: "t1", name: "π - lantern" },
+    { id: "t1", name: "Pi" },
     { id: "t2", name: "Neovim" },
   ]);
 });
@@ -749,10 +751,14 @@ test("the names it set are kept in shared state, and closed tabs leave it", () =
     ],
   );
   tick();
-  assert.deepEqual(plain(h.data["better-tabs.names"]), { t1: { auto: "lantern" }, t2: { manual: true } });
-  space.tabs.splice(0, 1);
+  assert.deepEqual(plain(h.data["better-tabs.names"]), { t1: { pending: "lantern", at: 1_000_300 }, t2: { manual: true } });
   tick();
-  assert.deepEqual(plain(h.data["better-tabs.names"]), { t2: { manual: true } });
+  assert.deepEqual(plain(h.data["better-tabs.names"]), { t1: { auto: "lantern" }, t2: { manual: true } });
+  space.tabs.splice(1, 1);
+  tick();
+  assert.deepEqual(plain(h.data["better-tabs.names"]), { t1: { auto: "lantern" }, t2: { manual: true, gone: 1_000_900 } });
+  tick(10_000);
+  assert.deepEqual(plain(h.data["better-tabs.names"]), { t1: { auto: "lantern" } });
 });
 
 test("a mod-only tab and a shell with no folder yet are left as they are, and name nothing", () => {
@@ -767,6 +773,7 @@ test("a mod-only tab and a shell with no folder yet are left as they are, and na
     ],
   );
   assert.deepEqual(tick(), [{ id: "t4", name: "api" }]);
+  tick();
   assert.deepEqual(plain(h.data["better-tabs.names"]), { t4: { auto: "api" } });
 });
 
@@ -784,10 +791,76 @@ test("a folder's name is its last part, ~ at home, and / at the root", () => {
   assert.equal(h.folderName("/work/lantern"), "lantern");
   assert.equal(h.folderName("/work/lantern//"), "lantern");
   assert.equal(h.folderName("/home/sam"), "~");
-  assert.equal(h.folderName("/Users/sam/"), "~");
-  assert.equal(h.folderName("/root"), "~");
+  assert.equal(h.folderName("/home/sam/"), "~");
+  assert.equal(h.folderName("/Users/sam"), "sam");
+  assert.equal(h.folderName("/Users/Shared"), "Shared");
+  assert.equal(h.folderName("/home/bob"), "bob");
   assert.equal(h.folderName("/home/sam/lantern"), "lantern");
   assert.equal(h.folderName("/"), "/");
   assert.equal(h.folderName(""), null);
   assert.equal(h.folderName(null), null);
+});
+
+test("a rename that fails or never lands is asked again, not taken for the person's", () => {
+  const pane = { pane: "p1", tab: "t1", terminal: "x1", title: "Fix the login form", cwd: "/work", program: AGENT("Claude Code") };
+  const { h, tick } = naming([named("t1", 1, "Claude Code")], [pane]);
+  const run = h.context.run;
+  h.context.run = () => {
+    throw new Error("busy");
+  };
+  const warn = h.context.console.warn;
+  h.context.console.warn = () => {};
+  try {
+    tick();
+    tick(2000);
+  } finally {
+    h.context.run = run;
+    h.context.console.warn = warn;
+  }
+  assert.deepEqual(plain(h.data["better-tabs.names"]).t1.pending, "Fix the login form");
+  assert.deepEqual(tick(2000), [{ id: "t1", name: "Fix the login form" }]);
+  assert.deepEqual(tick(), []);
+  assert.deepEqual(plain(h.data["better-tabs.names"]), { t1: { auto: "Fix the login form" } });
+});
+
+test("another bar waits for a rename the first one asked for", () => {
+  const h = harness();
+  const spaces = [{ id: "a", tabs: [named("t1", 1, "Claude Code")] }];
+  const panes = [{ pane: "p1", tab: "t1", terminal: "x1", title: "Fix the login form", cwd: "/work", program: AGENT("Claude Code") }];
+  const first = h.planNames(spaces, panes, {}, 1000, "/home/sam");
+  assert.equal(first.renames.length, 1);
+  const second = h.planNames(spaces, panes, plain(first.records), 1500, "/home/sam");
+  assert.deepEqual(plain(second), { renames: [], records: plain(first.records) });
+});
+
+test("a title is cleaned: one line, no status glyph in front, and cut when long", () => {
+  const pane = { pane: "p1", tab: "t1", terminal: "x1", title: "✳ Fix the login\nform ", cwd: "/work", program: AGENT("Claude Code") };
+  const { h, tick } = naming([unnamed("t1", 1)], [pane]);
+  assert.deepEqual(tick(), [{ id: "t1", name: "Fix the login form" }]);
+  pane.title = "⠋ Fix the login form";
+  assert.deepEqual(tick(), []);
+  pane.title = "✶ Fix the login form";
+  assert.deepEqual(tick(3000), []);
+  assert.deepEqual(plain(h.data["better-tabs.names"]), { t1: { auto: "Fix the login form" } });
+  const long = h.cleanName("a".repeat(100));
+  assert.equal(long.length, 80);
+  assert.ok(long.endsWith("…"));
+});
+
+test("a moment with no tabs listed forgets nothing", () => {
+  const pane = { pane: "p1", tab: "t1", terminal: "x1", title: "sam@desk", cwd: "/work/api", program: SHELL };
+  const { h, tick, space } = naming([named("t1", 1, "server")], [pane]);
+  tick();
+  const tabs = space.tabs.splice(0);
+  tick();
+  assert.deepEqual(plain(h.data["better-tabs.names"]), { t1: { manual: true } });
+  space.tabs.push(...tabs);
+  assert.deepEqual(tick(), []);
+});
+
+test("nothing is renamed before the installed settings are read", () => {
+  const { h, tick } = naming([unnamed("t1", 1)], [{ pane: "p1", tab: "t1", terminal: "x1", title: "", cwd: "/work/lantern", program: SHELL }]);
+  h.tabs.settingsReady = false;
+  assert.deepEqual(tick(), []);
+  assert.equal(h.data["better-tabs.names"], undefined);
 });

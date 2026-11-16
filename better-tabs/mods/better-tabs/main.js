@@ -6,7 +6,7 @@
 //   views/drags.js         dragging tabs and toolbar actions
 //   views/tab-bar.js       the bar: tabs, +, toolbar, ⋮
 //   views/menu.js          the ⋮ menu and toolbar action buttons
-//   actions/names.js       naming a tab nobody named, once
+//   actions/names.js       tabs named after what runs in them
 // actions/ holds the logic with no drawing, views/ui.js the shared look.
 import { View } from "gpui-kit";
 import { shared, setShared, nextCommand, props, notify } from "herdr";
@@ -54,6 +54,7 @@ class Tabs extends View {
     cx.spawn(async (cx) => {
       const { settings, problems } = await loadSettings("better-tabs", DEFAULT_SETTINGS);
       this.settings = settings;
+      this.settingsReady = true;
       for (const problem of problems) console.warn(`better-tabs mod.json settings: ${problem}`);
       cx.notify();
     });
