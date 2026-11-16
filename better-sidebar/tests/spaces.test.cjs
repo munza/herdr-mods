@@ -639,26 +639,50 @@ test("the list scrolls to the shown space when it changes, and only then", () =>
   assert.equal(find(h.mod.body(h.colors, false), "spaces-list").attributes.track_scroll.length, 1);
 });
 
-test("it scrolls to the last row under the space, so the space and its tabs show, counting the rows above", () => {
+test("it scrolls to the space's group, its row and the rows under it, counting the rows above", () => {
   const { h, show } = scrolling();
   // As in the lists view: pinned agents on top, and each space's tabs under it.
   h.mod.above = () => ["pinned agent"];
   h.mod.under = ({ w }) => [`${w.id} tab 1`, `${w.id} tab 2`];
   show("api");
-  h.mod.body(h.colors, false);
-  assert.deepEqual(h.scrolled, [9], "api's second tab: 1 pinned + 3 rows each for trails and maps + api + 2 tabs");
+  const list = find(h.mod.body(h.colors, false), "spaces-list");
+  assert.deepEqual(h.scrolled, [3], "1 pinned + the trails and maps groups");
+  const group = list.nodes[3];
+  assert.equal(group.nodes[0].id, "space-api");
+  assert.deepEqual(group.nodes.slice(1), ["api tab 1", "api tab 2"]);
   show("notes");
   h.mod.body(h.colors, true);
-  assert.deepEqual(h.scrolled, [9, 4], "the rail has no rows under a space");
+  assert.deepEqual(h.scrolled, [3, 4], "on the rail a space is its own row");
 });
 
-test("a shown space that isn't listed, as in a folded machine, doesn't scroll", () => {
+test("a shown space that isn't listed, as in a folded machine, doesn't scroll, and coming back does", () => {
   const { h, show } = scrolling();
   h.live.spaces.push({ id: "far", name: "far", folder: "/far", tabs: [], machine: "server", active: false });
   h.mod.shown.add("far");
   h.mod.folded.add("server");
+  show("maps");
+  h.mod.body(h.colors, false);
   show("far");
   h.mod.body(h.colors, false);
-  assert.deepEqual(h.scrolled, []);
+  assert.deepEqual(h.scrolled, [2], "after the local machine header");
+  show("maps");
+  h.mod.body(h.colors, false);
+  assert.deepEqual(h.scrolled, [2, 2], "back to maps, which may have scrolled away meanwhile");
 });
 
+test("a change that follows a press in the list doesn't scroll; a later one does", () => {
+  const { h, show } = scrolling();
+  let now = 100000;
+  vm.runInContext("Date", h.context).now = () => now;
+  const list = find(h.mod.body(h.colors, false), "spaces-list");
+  assert.deepEqual(h.scrolled, [0]);
+  list.handlers.mouse_down_left();
+  show("api");
+  now += 200;
+  h.mod.body(h.colors, false);
+  assert.deepEqual(h.scrolled, [0], "the clicked row stays under the pointer");
+  now += 5000;
+  show("notes");
+  h.mod.body(h.colors, false);
+  assert.deepEqual(h.scrolled, [0, 3]);
+});
