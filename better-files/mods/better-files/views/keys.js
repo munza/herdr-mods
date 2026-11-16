@@ -21,9 +21,13 @@ export const keyMethods = {
   moveCursor(step, cx, rows = this.visibleRows()) {
     if (!rows.length) return;
     const at = rows.findIndex((r) => r.relative === this.cursor);
-    const next = at === -1 ? (step > 0 ? 0 : rows.length - 1) : Math.max(0, Math.min(rows.length - 1, at + step));
-    this.cursor = rows[next].relative;
-    this.treeScroll.scroll_to_item(next);
+    this.markRow(at === -1 ? (step > 0 ? 0 : rows.length - 1) : Math.max(0, Math.min(rows.length - 1, at + step)), cx, rows);
+  },
+
+  // Puts the marker on the row at `index` and scrolls it into view.
+  markRow(index, cx, rows) {
+    this.cursor = rows[index].relative;
+    this.treeScroll.scroll_to_item(index);
     cx.notify();
   },
 
@@ -56,16 +60,17 @@ export const keyMethods = {
         this.moveCursor(-PAGE, cx, rows);
         break;
       case "home":
-        this.moveCursor(-rows.length, cx, rows);
+        if (rows.length) this.markRow(0, cx, rows);
         break;
       case "end":
-        this.moveCursor(rows.length, cx, rows);
+        if (rows.length) this.markRow(rows.length - 1, cx, rows);
         break;
       // Opens a closed folder, else steps into it.
       case "right":
       case "l":
         if (!row?.dir) return;
-        if (!open) this.toggleFolder(row.relative, cx);
+        if (!open && this.filterText()) this.revealFolder(row.relative, cx);
+        else if (!open) this.toggleFolder(row.relative, cx);
         else if (rows[at + 1]?.depth > row.depth) this.moveCursor(1, cx, rows);
         break;
       // Closes an open folder, else steps out to the folder above.

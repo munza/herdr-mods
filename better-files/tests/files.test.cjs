@@ -19,7 +19,7 @@ const TREE = { '/repo': [['d', 'src'], ['f', 'b.md'], ['f', 'a.md']], '/repo/src
 // Every file under /repo, as git ls-files -z would list it.
 const EVERY = 'a.md\0b.md\0new.txt\0src/main.go\0';
 
-function world({ storage = {}, everything = EVERY, found = '', copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
+function world({ storage = {}, everything = EVERY, deleted = '', found = '', copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
   const store = new Map(Object.entries(sharedInit));
   const ran = [], execs = [], sent = [], clipboard = [], closed = [], overlays = [], urls = [], scrolled = [];
   const live = { layout, panes: [{ pane: 'p1', tab: 'tab1', cwd }], focused: { space: 's', tab: 'tab1', pane: 'p1', cwd }, agents, texts: { ...texts } };
@@ -91,6 +91,7 @@ function world({ storage = {}, everything = EVERY, found = '', copyImage, diff =
       execs.push([bin, ...args]);
       if (bin === 'sh' && args[2] === 'copy-image') return copyImage ?? { code: 0 };
       if (bin === 'sh' && args[2] === 'index') return { code: 0, stdout: found };
+      if (bin === 'git' && args.includes('--deleted')) return top ? { code: 0, stdout: deleted } : { code: 128, stdout: '' };
       if (bin === 'git' && args.includes('ls-files')) return top ? { code: 0, stdout: everything } : { code: 128, stdout: '' };
       if (bin === 'sh') return { code: 0, stdout: (tree[args.at(-1)] ?? []).flatMap(([k, n]) => [k, n, '']).join('\0').replace(/\0\0/g, '\0') };
       if (bin === 'mdfind') return { code: 0, stdout: editors.some((b) => args[0].includes(b)) ? '/Apps/It.app\n' : '' };
@@ -754,14 +755,14 @@ test('the filter finds a file in a folder not opened yet, from Git\'s list, and 
   assert.ok(find(h.mod.render(), 'files-filter-input'), 'the filter sits under the header');
   assert.equal(find(h.mod.render(), 'files-filter-clear'), undefined, 'no clear button while empty');
   await typeFilter(h, 'main');
-  assert.equal(h.execs.filter((e) => e.includes('ls-files')).length, 1);
+  assert.equal(h.execs.filter((e) => e.includes('--cached')).length, 1);
   assert.equal(h.execs.filter((e) => e[0] === 'sh' && e[3] === 'index').length, 0, 'no find inside a repo');
   assert.deepEqual(rowIds(h), ['files-row-src', 'files-row-src/main.go']);
   assert.match(strings(find(h.mod.render(), 'files-row-src/main.go')), /main\.go M/);
   const chevron = (id) => find(h.mod.render(), id).nodes[0].nodes[0].svgPath;
   assert.equal(chevron('files-row-src'), 'mods/better-files/icons/chevron-down.svg', 'shut in the tree, open among the matches');
   await typeFilter(h, 'mai');
-  assert.equal(h.execs.filter((e) => e.includes('ls-files')).length, 1, 'typing more reads nothing again');
+  assert.equal(h.execs.filter((e) => e.includes('--cached')).length, 1, 'typing more reads nothing again');
   h.mod.filter.handlers.submit({}, h.cx);
   assert.equal(tabs(h).length, 1);
   assert.equal(tabs(h)[0][1].name, 'main.go');
@@ -823,12 +824,12 @@ test('the list is read again when it is old, and a failed read says why', async 
   h.mod.index.at = 0;
   h.tick();
   await h.flush();
-  assert.equal(h.execs.filter((e) => e.includes('ls-files')).length, 2);
+  assert.equal(h.execs.filter((e) => e.includes('--cached')).length, 2);
   h.mod.index.at = Date.now() - 6000;
   h.mod.index.stale = true;
   h.mod.refresh(h.cx);
   await h.flush();
-  assert.equal(h.execs.filter((e) => e.includes('ls-files')).length, 3);
+  assert.equal(h.execs.filter((e) => e.includes('--cached')).length, 3);
   const broken = await ready({ top: null });
   broken.context.exec = async () => ({ code: 1, stdout: '', stderr: 'find: permission denied' });
   await typeFilter(broken, 'x');
@@ -838,7 +839,7 @@ test('the list is read again when it is old, and a failed read says why', async 
 test('a busy folder reads the list again at most every 5 seconds, and catches up after', async () => {
   const h = await ready();
   await typeFilter(h, 'main');
-  const reads = () => h.execs.filter((e) => e.includes('ls-files')).length;
+  const reads = () => h.execs.filter((e) => e.includes('--cached')).length;
   assert.equal(reads(), 1);
   for (let i = 0; i < 3; i++) {
     h.mod.index.stale = true;
@@ -856,6 +857,32 @@ test('a busy folder reads the list again at most every 5 seconds, and catches up
   h.mod.index.stale = true;
   h.mod.refresh(h.cx);
   assert.equal(h.later.length, 2, 'the next busy spell waits too');
+});
+
+test('the filter leaves out a file deleted but not staged, and reads a folder Git ignores with find', async () => {
+  const h = await ready({ deleted: 'b.md\0' });
+  await typeFilter(h, '.md');
+  assert.deepEqual(rowIds(h), ['files-row-a.md'], 'b.md is gone from disk');
+  const ignored = await ready({ everything: '', found: './index.js\0' });
+  await typeFilter(ignored, 'index');
+  assert.equal(ignored.execs.filter((e) => e[0] === 'sh' && e[3] === 'index').length, 1, 'Git listed nothing, so find did');
+  assert.deepEqual(rowIds(ignored), ['files-row-index.js']);
+});
+
+test('a change on disk while the list is being read leaves the new list stale', async () => {
+  const h = await ready();
+  const exec = h.context.exec;
+  h.context.exec = async (bin, args, options) => {
+    if (args.includes('--cached')) h.mod.changes = (h.mod.changes ?? 0) + 1;
+    return exec(bin, args, options);
+  };
+  await typeFilter(h, 'main');
+  assert.equal(h.mod.index.stale, true, 'it is read again once the wait is over');
+  h.context.exec = exec;
+  h.mod.index.at = Date.now() - 6000;
+  h.mod.refresh(h.cx);
+  await h.flush();
+  assert.equal(h.mod.index.stale, false);
 });
 
 test('a folder picked from the matches opens even while the tree is still loading', async () => {
@@ -917,6 +944,13 @@ test('clicking the tree gives it the keyboard, and the arrows, j and k move a ma
   press(h, 'home');
   assert.deepEqual(marked(h), ['src']);
   assert.deepEqual(h.scrolled.slice(-2), [2, 0], 'the marked row is scrolled into view');
+  h.mod.cursor = null;
+  press(h, 'home');
+  assert.deepEqual(marked(h), ['src'], 'Home goes to the top with no marker too');
+  h.mod.cursor = null;
+  press(h, 'end');
+  assert.deepEqual(marked(h), ['b.md'], 'and End to the bottom');
+  press(h, 'home');
   assert.equal(press(h, 'x'), false, 'other keys go on to Herdr');
   assert.equal(press(h, 'escape'), true);
   assert.deepEqual(marked(h), []);
@@ -1007,4 +1041,16 @@ test('collapse all closes every folder, and a marker inside one moves to its top
   assert.equal(h.mod.folders.size, 0);
   assert.deepEqual(marked(h), ['src']);
   assert.equal(find(h.mod.render(), 'files-tool-collapse').handlers.click, undefined, 'nothing is left to close');
+});
+
+test('Right on a matching folder opens it in the tree, as Enter does', async () => {
+  const h = await ready();
+  await typeFilter(h, 'sr');
+  h.mod.cursor = 'src';
+  press(h, 'right');
+  await h.flush();
+  assert.equal(h.mod.filter.value(), '');
+  assert.ok(h.mod.folders.has('src'));
+  assert.deepEqual(marked(h), ['src']);
+  assert.ok(find(h.mod.render(), 'files-row-src/main.go'), 'the folder opened');
 });

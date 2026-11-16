@@ -122,7 +122,7 @@ class BetterFiles extends View {
       cx.timer.every(Math.max(1000, duration(settings.refresh.tree, 10000)), (cx) => this.refresh(cx));
     });
     cx.spawn(async (cx) => {
-      // "focus" gives the tree the keyboard, for a key bound to better-files:focus.
+      // "focus" gives the tree the keyboard, for a key bound to better-files.focus.
       for (;;) {
         const command = await nextCommand();
         if (command === "refresh") this.refresh(cx);

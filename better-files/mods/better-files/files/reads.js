@@ -14,14 +14,23 @@ const RESTALE_MS = 5000;
 const SKIPPED = [".git", "node_modules", ".venv", "__pycache__", "target", "dist", ".next"];
 
 // Every file under the folder, for the filter: Git's own list where there is one, so ignored
-// files stay out, else find without the folders that are usually huge, cut at a size.
+// files stay out, else find without the folders that are usually huge, cut at a size. A folder
+// Git ignores, such as node_modules, gets an empty list from Git, so find reads it instead.
 async function everyFile(root, on) {
-  const git = await exec(
-    "git",
-    ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.quotepath=off", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-    { cwd: root, on },
-  ).catch(() => null);
-  if (git?.code === 0) return git.stdout;
+  const lsFiles = (...flags) =>
+    exec("git", ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.quotepath=off", "ls-files", "-z", ...flags], { cwd: root, on }).catch(
+      () => null,
+    );
+  // Git still lists a tracked file that was deleted but not staged, so those come out.
+  const [git, gone] = await Promise.all([lsFiles("--cached", "--others", "--exclude-standard"), lsFiles("--deleted")]);
+  if (git?.code === 0 && git.stdout) {
+    if (gone?.code !== 0 || !gone.stdout) return git.stdout;
+    const deleted = new Set(gone.stdout.split("\0"));
+    return git.stdout
+      .split("\0")
+      .filter((path) => !deleted.has(path))
+      .join("\0");
+  }
   const depth = SHALLOW_ROOT.test(root.replace(/\/+$/, "") || "/") ? SHALLOW_DEPTH : INDEX_DEPTH;
   const prune = SKIPPED.map((name) => `-name '${name}'`).join(" -o ");
   const script = `find . -mindepth 1 -maxdepth "$1" \\( ${prune} \\) -prune -o ! -type d -print0 | head -c "$2"`;
@@ -153,6 +162,7 @@ export const readMethods = {
       try {
         while (this.key === key) {
           await watchFolder(root);
+          this.changes = (this.changes ?? 0) + 1;
           if (this.index?.key === key) this.index.stale = true;
           if (this.key === key) this.refresh(cx);
         }
@@ -184,9 +194,11 @@ export const readMethods = {
     this.indexing = key;
     cx.spawn(async (cx) => {
       try {
+        // A change on disk while the list is read leaves it stale, to be read again.
+        const changes = this.changes;
         const listing = await everyFile(root, on);
         if (this.key === key) {
-          this.index = { key, at: Date.now(), stale: false, ...indexOf(listing) };
+          this.index = { key, at: Date.now(), stale: this.changes !== changes, ...indexOf(listing) };
           this.indexError = null;
         }
       } catch (e) {
