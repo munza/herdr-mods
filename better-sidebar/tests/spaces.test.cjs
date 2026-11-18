@@ -7,7 +7,7 @@ const runtime = path.join(__dirname, "../mods/better-sidebar");
 
 // Inspect fluent GPUI descriptions without opening a window. Timers do not run
 // automatically; flush() waits for spawned reads, making races deterministic.
-function harness() {
+function harness(stored = {}) {
   const live = { spaces: [], panes: [], machines: [] };
   const pending = [],
     calls = [],
@@ -89,7 +89,12 @@ function harness() {
     },
     run: (name, args) => commands.push({ name, args }),
     openOverlay: (args) => overlays.push(args),
-    localStorage: { getItem: () => null, setItem() {} },
+    localStorage: {
+      getItem: (key) => stored[key] ?? null,
+      setItem(key, value) {
+        stored[key] = String(value);
+      },
+    },
     hc: async () => ({ code: 0, stdout: '{"machines":[]}' }),
     watchFolder: async () => {
       throw Error("No watcher in tests");
@@ -119,6 +124,7 @@ function harness() {
   mod.init({}, cx);
   return {
     live,
+    stored,
     calls,
     commands,
     overlays,
@@ -622,10 +628,11 @@ test("spaces publish each space's main space for the agents block", () => {
   assert.equal(parents.plain, undefined, "not a repository");
 });
 
-// Space sorting. Times are when something in a tab last changed state, as Herdr gives them.
-const tab = (id, changed_at = null, working_since = null) => ({ id, changed_at, working_since });
-function sortable() {
-  const h = harness();
+// Space sorting. Times are when something in a tab last changed state, as Herdr gives them;
+// they seed a tab the first time it's seen, and after that a change of status stamps it.
+const tab = (id, changed_at = null, working_since = null, status = null) => ({ id, changed_at, working_since, status });
+function sortable(stored) {
+  const h = harness(stored);
   h.live.spaces = [
     { id: "trails", name: "trails", folder: "/trails", tabs: [tab("t1", 100)] },
     { id: "maps", name: "Maps", folder: "/maps", tabs: [tab("t2", null), tab("t3", 300)] },
@@ -634,6 +641,9 @@ function sortable() {
     { id: "idle", name: "Idle", folder: "/idle", tabs: [] },
   ];
   for (const sp of h.live.spaces) h.mod.shown.add(sp.id);
+  // Each look is a second later, so changes stamped one after another don't tie.
+  let clock = 1e12;
+  vm.runInContext("Date", h.context).now = () => (clock += 1000);
   return h;
 }
 const ids = (h) => Array.from(h.mod.ordered(), (r) => r.w.id);
@@ -649,8 +659,51 @@ test("Recent puts the space with the latest change first, and quiet ones after i
   const h = sortable();
   h.values["spaces.sort"] = "recent";
   assert.deepEqual(ids(h), ["maps", "api", "trails", "quiet", "idle"]);
-  h.live.spaces[2].tabs[0].working_since = 400;
+  h.live.spaces[2].tabs[0].status = "working";
   assert.deepEqual(ids(h), ["quiet", "maps", "api", "trails", "idle"]);
+});
+
+test("Recent doesn't move a space when looking at it turns done into idle", () => {
+  const h = sortable();
+  h.values["spaces.sort"] = "recent";
+  ids(h);
+  h.live.spaces[0].tabs[0].status = "done";
+  assert.deepEqual(ids(h), ["trails", "maps", "api", "quiet", "idle"], "finishing is a change");
+  h.live.spaces[1].tabs[1].status = "working";
+  assert.deepEqual(ids(h), ["maps", "trails", "api", "quiet", "idle"]);
+  h.live.spaces[0].tabs[0].status = "idle";
+  h.live.spaces[0].tabs[0].changed_at = 2e12;
+  assert.deepEqual(ids(h), ["maps", "trails", "api", "quiet", "idle"], "seeing it isn't");
+});
+
+test("Recent keeps its order across a restart", () => {
+  const stored = {};
+  const h = sortable(stored);
+  h.values["spaces.sort"] = "recent";
+  ids(h);
+  h.live.spaces[2].tabs[0].status = "working";
+  assert.deepEqual(ids(h), ["quiet", "maps", "api", "trails", "idle"]);
+  const again = sortable(stored);
+  again.values["spaces.sort"] = "recent";
+  // After a restart Herdr has no stamps of its own.
+  for (const sp of again.live.spaces) for (const t of sp.tabs) t.changed_at = null;
+  again.live.spaces[2].tabs[0].status = "working";
+  assert.deepEqual(ids(again), ["quiet", "maps", "api", "trails", "idle"]);
+});
+
+test("a sorted list holds still while a row is pressed, and the pressed row doesn't fade", () => {
+  const h = sortable();
+  h.values["spaces.sort"] = "recent";
+  const tree = h.mod.body(h.colors, false);
+  find(tree, "space-api").handlers.mouse_down_left({}, h.cx);
+  find(tree, "space-trails").handlers.mouse_move({}, h.cx);
+  h.live.spaces[2].tabs[0].status = "working";
+  assert.deepEqual(ids(h), ["maps", "api", "trails", "quiet", "idle"], "held while pressed");
+  const pressed = find(h.mod.body(h.colors, false), "space-api");
+  assert.ok(!JSON.stringify(pressed).includes('"opacity"'), "not faded like a drag");
+  pressed.handlers.mouse_up_left({}, h.cx);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.commands)), [{ name: "space.select", args: { id: "api" } }]);
+  assert.deepEqual(ids(h), ["quiet", "maps", "api", "trails", "idle"], "moves once released");
 });
 
 test("Name sorts A to Z, case aside", () => {

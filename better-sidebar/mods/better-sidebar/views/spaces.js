@@ -30,9 +30,6 @@ const SPACE_SORTS = [
   { id: "name", label: "Name", icon: "arrow-down-a-z" },
 ];
 const spaceSortOf = () => SPACE_SORTS.find((s) => s.id === shared("spaces.sort")) ?? SPACE_SORTS[0];
-// When something in a space last changed state: the latest of its tabs' changes, or 0 when
-// nothing has since Herdr started.
-const lastChange = (w) => Math.max(0, ...w.tabs.flatMap((tab) => [tab.changed_at ?? 0, tab.working_since ?? 0]));
 
 const USUAL_BRANCHES = new Set(["main", "master"]);
 const rowHeight = ({ tree }) => (tree ? 28 : 30);
@@ -90,6 +87,13 @@ export class Spaces {
     this.over = null;
     this.sortOpen = false;
     this.sortFocus = cx.focus_handle();
+    // Each tab's last state and when it changed (ms), kept across restarts, for Recent.
+    try {
+      this.changed = JSON.parse(localStorage.getItem("spaces.changed") ?? "{}");
+    } catch {
+      this.changed = {};
+    }
+    this.frozen = null;
     this.machines = [];
     this.folded = new Set();
     try {
@@ -351,24 +355,71 @@ export class Spaces {
       placed.add(r.g.repo);
       kids.forEach((k, n) => out.push({ ...k, tree: n === kids.length - 1 ? "└─" : "├─" }));
     }
+    this.track(sp, Date.now());
     return this.sorted(out);
+  }
+
+  // Stamps tabs whose state changed. Done and idle count as one: looking at a space whose
+  // agent finished turns done into idle, and looking isn't anything happening in it. A tab
+  // seen for the first time starts at Herdr's own stamp (0 when nothing has changed since
+  // Herdr started).
+  track(sp, now) {
+    let dirty = false;
+    const listed = new Set();
+    for (const w of sp)
+      for (const tab of w.tabs ?? []) {
+        listed.add(tab.id);
+        const s = tab.status === "done" ? "idle" : (tab.status ?? null);
+        const was = this.changed[tab.id];
+        if (was && was.s === s) continue;
+        const at = was ? now : Math.max(0, tab.changed_at ?? 0, tab.working_since ?? 0);
+        this.changed[tab.id] = { s, at };
+        dirty = true;
+      }
+    if (!dirty) return;
+    // Gone and old: the list alone is empty right after a start.
+    for (const [k, c] of Object.entries(this.changed))
+      if (!listed.has(k) && now - c.at > 30 * 86400000) delete this.changed[k];
+    try {
+      localStorage.setItem("spaces.changed", JSON.stringify(this.changed));
+    } catch {}
+  }
+
+  // When something in a space last changed state, or 0 when nothing is known.
+  since(w) {
+    return Math.max(0, ...(w.tabs ?? []).map((tab) => this.changed[tab.id]?.at ?? 0));
   }
 
   // The rows in the picked order. A main space and its worktrees move together, the worktrees
   // still under it in the same order; for Recent the group goes by its latest change. Ties
-  // keep Herdr's order.
+  // keep Herdr's order. While a row is pressed the order holds still, so the row under the
+  // pointer stays the one pressed.
   sorted(rows) {
     const sort = spaceSortOf().id;
-    if (sort === "manual") return rows;
+    if (sort === "manual") {
+      this.frozen = null;
+      return rows;
+    }
     const groups = [];
-    for (const r of rows) (r.tree ? groups.at(-1) : groups[groups.length] = []).push(r);
-    const name = (g) => g[0].w.name;
-    const recent = (g) => Math.max(...g.map((r) => lastChange(r.w)));
-    const before =
-      sort === "name"
-        ? (a, b) => name(a).localeCompare(name(b), undefined, { sensitivity: "base" })
-        : (a, b) => (recent(b) === recent(a) ? 0 : recent(b) > recent(a) ? 1 : -1);
-    return groups.sort(before).flat();
+    for (const r of rows) {
+      if (!r.tree) groups.push([]);
+      groups.at(-1).push(r);
+    }
+    const head = (g) => g[0].w.id;
+    let keyed;
+    if (this.pressed !== null && this.frozen) {
+      const at = new Map(this.frozen.map((id, n) => [id, n]));
+      keyed = groups.map((g) => ({ g, k: at.get(head(g)) ?? at.size }));
+      keyed.sort((a, b) => a.k - b.k);
+    } else if (sort === "name") {
+      keyed = groups.map((g) => ({ g, k: g[0].w.name }));
+      keyed.sort((a, b) => a.k.localeCompare(b.k, undefined, { sensitivity: "base" }));
+    } else {
+      keyed = groups.map((g) => ({ g, k: Math.max(...g.map((r) => this.since(r.w))) }));
+      keyed.sort((a, b) => b.k - a.k);
+    }
+    this.frozen = keyed.map(({ g }) => head(g));
+    return keyed.flatMap(({ g }) => g);
   }
 
   // The rows, under a header per machine once one isn't this computer.
@@ -646,7 +697,9 @@ export class Spaces {
       .rounded(8)
       .when(lit, (el) => el.bg(t.selected))
       .when(!lit, (el) => el.hover((s) => s.bg(t.hover)))
-      .when(this.pressed === i && this.over !== i, (el) => el.opacity(0.5))
+      .when(spaceSortOf().id === "manual" && this.pressed === i && this.over !== i, (el) =>
+        el.opacity(0.5),
+      )
       .on_mouse_down("right", () => this.menu(w))
       .child(this.rowTitle(w, g, tree, t))
       .when(hasPRLine, (el) => el.child(this.prLine(w, t, Boolean(tree))));
