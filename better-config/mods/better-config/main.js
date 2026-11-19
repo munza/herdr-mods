@@ -23,6 +23,7 @@ import {
   shippedMods,
   installedRows,
   filterInstalled,
+  rebind,
 } from "./model.js";
 import { pickListMods, pickMkdir } from "./shell.js";
 
@@ -174,6 +175,10 @@ export default class BetterConfig extends View {
           mod.manifest = JSON.parse(text);
           mod.fields = fieldsOf(mod.schema, mod.manifest.settings);
           await this.keep(mod);
+          for (const [key, value] of edits) {
+            const field = mod.fields.find((f) => f.key === key);
+            if (field?.type === "key") await this.bindKey(name, field, value ?? field.default);
+          }
           failed = null;
           break;
         } catch (e) {
@@ -186,6 +191,30 @@ export default class BetterConfig extends View {
       await this.load();
       cx.notify();
     });
+  }
+
+  // A key setting changes keys.json too: its action moves to the new key. What the key did
+  // before is kept in displaced-keys.json beside the copies, and comes back when the action moves off it.
+  async bindKey(name, field, key) {
+    const path = `${appHome()}/keys.json`;
+    const keptPath = `${this.keptFolder()}/displaced-keys.json`;
+    const note = `${name}:${field.key}`;
+    try {
+      const [raw, keptRaw] = await Promise.all([readTextFile(path), readTextFile(keptPath)]);
+      const next = rebind(JSON.parse(raw ?? "{}"), JSON.parse(keptRaw ?? "{}"), field.action, key);
+      await writeTextFile(path, `${JSON.stringify(next.keys, null, 2)}\n`, raw);
+      const kept = `${JSON.stringify(next.displaced, null, 2)}\n`;
+      if (kept !== (keptRaw ?? "{}\n")) {
+        if (keptRaw === null) {
+          const { program, args } = pickMkdir(this.keptFolder(), window()?.platform);
+          await exec(program, args);
+        }
+        await writeTextFile(keptPath, kept, keptRaw);
+      }
+      delete this.notes[note];
+    } catch (e) {
+      this.notes[note] = `Saved, but keys.json wasn't changed: ${e?.message ?? e}`;
+    }
   }
 
   // Back to what the mod ships with: its described default, or nothing.

@@ -38,7 +38,7 @@ function harness({ storage = new Map(), exec, hc, known = [] } = {}) {
     return proxy;
   }
   const state = ({ value = '' } = {}) => ({ text: value, value() { return this.text; }, set_value(v) { this.text = v; }, handlers: {}, on(e, f) { this.handlers[e] = f; }, focus() {}, set_selected_range(r) { this.selected = r; } });
-  const live = { spaces: [], panes: [], agents: [] };
+  const live = { spaces: [], panes: [], agents: [], shared: {} };
   const context = {
     View: class {}, div: el, svg: el, v_flex: el, h_flex: el,
     Popover: { new: (id) => el().id(id) }, Input: { new: () => el() }, Textarea: { new: () => el() },
@@ -48,6 +48,7 @@ function harness({ storage = new Map(), exec, hc, known = [] } = {}) {
     exec: exec ?? (async () => ({ code: 1, stdout: '', stderr: '' })),
     hc: hc ?? (async (args) => { sent.push(args); return { code: 0, stdout: '', stderr: '' }; }),
     run: (name, args) => ran.push([name, args]),
+    shared: (k) => live.shared[k], setShared: (k, v) => { live.shared[k] = v; },
     home: () => '/home/sam', appHome: () => '/app', theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
     layout: () => live.layout, settings: () => ({ font_family: 'Code' }), readTextFile: async () => null,
     nextCommand: () => new Promise(() => {}), knownAgents: async () => known,
@@ -678,4 +679,21 @@ test('the state chooser follows the workflow, not the order Linear returns', () 
   const { context: m } = harness();
   const names = (list) => m.workflowOrder(list).map((s) => s.name);
   same(names([{ name: 'Canceled', type: 'canceled' }, { name: 'Backlog', type: 'backlog' }, { name: 'In Progress', type: 'started' }, { name: 'Duplicate', type: 'canceled' }, { name: 'Done', type: 'completed' }, { name: 'Todo', type: 'unstarted' }]), ['Backlog', 'Todo', 'In Progress', 'Done', 'Canceled', 'Duplicate']);
+});
+
+test('Better Search can ask for an issue: it opens once, in the space it was asked for, while fresh', () => {
+  const h = harness();
+  const opened = [];
+  h.mod.openIssue = (identifier) => opened.push(identifier);
+  h.live.spaces = [{ id: 'space', active: true, folder: '/repo', branch: null, machine: null, tabs: [] }];
+  h.mod.spaceKey = 'local:space:/repo:';
+  h.live.shared['branch-issue.open'] = { space: 'other', identifier: 'ENG-1', at: Date.now() };
+  h.tick();
+  h.live.shared['branch-issue.open'] = { space: 'space', identifier: 'ENG-2', at: Date.now() };
+  h.tick();
+  h.tick();
+  h.live.shared['branch-issue.open'] = { space: 'space', identifier: 'ENG-3', at: Date.now() - 60000 };
+  h.tick();
+  assert.deepEqual(opened, ['ENG-2']);
+  assert.equal(h.mod.opening?.identifier, 'ENG-2', 'busy until it arrives');
 });
