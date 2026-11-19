@@ -12,7 +12,7 @@ Nothing in Herdr's window. The mod renders an empty `div`, so its floating block
 - **Tab:** the tab's name, or nothing when it's empty, named like the space, or only a number.
 - **Message:** for needs you, the question on the agent's screen; for finished, how its last reply began. Cut at a word to 140 characters, with `…`. Left out when there's none.
 
-On macOS, the tab is the subtitle and the message the body, and alerts from one agent share a thread in Notification Centre. On Linux, the body is the tab, a newline, then the message, with `&`, `<` and `>` escaped, since daemons read it as markup; it has one action, `default` labelled Open, which most daemons run on a click.
+On macOS, the tab is the subtitle and the message the body, and alerts from one agent share a thread in Notification Centre. On Linux, the body is the tab, ` · `, then the message (GNOME shows a banner's body on one line, with a newline as a plain space), with `&`, `<` and `>` escaped, since daemons read it as markup; it has one action, `default` labelled Open, which most daemons run on a click.
 
 ## How it behaves
 

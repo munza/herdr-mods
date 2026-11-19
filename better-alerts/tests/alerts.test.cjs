@@ -187,7 +187,7 @@ test("the body says the tab, then what the agent asked or how its reply began, s
   h.live.active = false;
   await h.tick();
   assert.deepEqual(h.posted().map((p) => p.body), [
-    "Fix the login form\nAll 42 tests pass. The form now checks that a &lt; b &amp; c.",
+    "Fix the login form · All 42 tests pass. The form now checks that a &lt; b &amp; c.",
     "",
   ]);
   assert.equal(JSON.stringify(h.read), JSON.stringify([["read", "t1", "--lines", "80"], ["read", "t2", "--lines", "80"]]));

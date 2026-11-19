@@ -91,7 +91,8 @@ export function escapeMarkup(text) {
 }
 
 // Everything a notification says. macOS shows the tab as its own line; Linux has only a title
-// and a body, so `body` starts with it there.
+// and a body, so `body` starts with it there, joined by " · ": GNOME shows a banner's body on
+// one line, with a newline as a plain space.
 export function alert(agent, screen) {
   const where = tab(agent);
   const said = message(agent, screen);
@@ -99,6 +100,6 @@ export function alert(agent, screen) {
     title: title(agent),
     tab: where,
     message: said ?? "",
-    body: [where, said].filter(Boolean).join("\n"),
+    body: [where, said].filter(Boolean).join(" · "),
   };
 }
