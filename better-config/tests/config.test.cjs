@@ -250,3 +250,34 @@ test("the Installed tabs and search: yours or Herdr's, matching the title or fol
   assert.deepEqual(names("yours", "lantern al"), ["lantern-alerts"], "the title matches, case aside");
   assert.deepEqual(names("herdr", "lantern"), []);
 });
+
+test("a key setting is checked, lowercased, and names the action it binds", async () => {
+  const { fieldsOf, parseInput, problemWith } = await load();
+  const keySchema = { properties: { settings: { properties: { key: { title: "Key", type: "string", format: "key", "x-action": "mod.open:x", default: "cmd-alt-p" } } } } };
+  const [field] = fieldsOf(keySchema, {});
+  assert.equal(field.type, "key");
+  assert.equal(field.action, "mod.open:x");
+  assert.deepEqual(parseInput(field, " Cmd-P "), { value: "cmd-p" });
+  assert.match(problemWith(field, "cmd p"), /key such as/);
+  assert.match(parseInput(field, "").error, /key such as/);
+  assert.equal(fieldsOf({ properties: { settings: { properties: { key: { type: "string", format: "key" } } } } }, {})[0].type, "text", "no action, no key");
+});
+
+test("rebinding moves the action, takes a used key, and gives it back when moved off", async () => {
+  const { rebind } = await load();
+  const keys = { global: { "cmd-p": "mod.open:picker", "cmd-alt-p": "mod.open:x", "cmd-t": "tab.new" }, terminal: { "ctrl-1": "terminal" } };
+  const taken = rebind(keys, {}, "mod.open:x", "cmd-p");
+  assert.deepEqual(taken.keys.global, { "cmd-p": "mod.open:x", "cmd-t": "tab.new" });
+  assert.deepEqual(taken.keys.terminal, keys.terminal);
+  assert.deepEqual(taken.displaced, { "cmd-p": "mod.open:picker" });
+  assert.equal(taken.took, "mod.open:picker");
+  assert.equal(keys.global["cmd-p"], "mod.open:picker", "the input isn't changed");
+  const back = rebind(taken.keys, taken.displaced, "mod.open:x", "cmd-alt-p");
+  assert.deepEqual(back.keys.global, { "cmd-p": "mod.open:picker", "cmd-alt-p": "mod.open:x", "cmd-t": "tab.new" });
+  assert.deepEqual(back.displaced, {});
+  assert.equal(back.took, null);
+  assert.deepEqual(rebind(null, null, "mod.open:x", "cmd-alt-p").keys, { global: { "cmd-alt-p": "mod.open:x" } });
+  const same = rebind(taken.keys, taken.displaced, "mod.open:x", "cmd-p");
+  assert.deepEqual(same.keys.global, taken.keys.global, "binding the same key again changes nothing");
+  assert.deepEqual(same.displaced, taken.displaced);
+});

@@ -13,7 +13,7 @@
 // reads LINEAR_API_KEY; the mod never sees the key.
 import { View } from "gpui-kit";
 import { InputState, TextareaState } from "gpui-base";
-import { spaces, panes, nextCommand, layout } from "herdr";
+import { spaces, panes, nextCommand, layout, shared } from "herdr";
 import { loadSettings, duration } from "./settings.js";
 import { savedMethods } from "./state/saved.js";
 import { discoveryMethods } from "./linear/discovery.js";
@@ -35,6 +35,9 @@ const CONTEXT_POLL_MS = 1000;
 const REFRESH_INTERVAL_MS = 60000;
 const FIRST_LOAD_LIMIT_MS = 30000;
 const NOTICE_MS = 5000;
+// Better Search asks for one by shared `branch-issue.open`, { space, identifier, at }; older asks are let go.
+const ASK_MS = 10000;
+const ASK_POLL_MS = 100;
 // Preferences a person may change in the installed mod.json under `settings`.
 const DEFAULT_SETTINGS = {
   provider: "linear",
@@ -155,7 +158,33 @@ class LinearIssues extends View {
     });
   }
 
+  // Better Search's ask, looked for often so the panel turns to it at once.
+  takeAsk(cx) {
+    const ask = shared("branch-issue.open");
+    if (!ask || ask.at <= (this.askedAt ?? 0)) return;
+    // Follow the space first, as the slower look does, so it can't cancel this load after.
+    const sp = activeSpace();
+    const key = spaceContextKey(sp);
+    if (key !== this.spaceKey) this.changeSpace(sp, key, cx);
+    // A write in progress finishes first; the ask waits for the next look.
+    if (ask?.identifier && ask.space === sp?.id && ask.at > (this.askedAt ?? 0) && Date.now() - ask.at < ASK_MS && !this.mutating) {
+      this.askedAt = ask.at;
+      // What was open last time mustn't replace what was asked for when the list loads.
+      this.reopenSaved = false;
+      this.restoreSelection = null;
+      // As a click in the list does: what was open goes, and the loading line shows until it's here.
+      if (this.issue) this.rememberView();
+      this.issue = null;
+      this.composer = null;
+      this.notice = null;
+      this.opening = { identifier: ask.identifier };
+      this.openIssue(ask.identifier, cx);
+      cx.notify();
+    }
+  }
+
   startPolling(cx) {
+    cx.timer.every(ASK_POLL_MS, (cx) => this.takeAsk(cx));
     cx.timer.every(CONTEXT_POLL_MS, (cx) => {
       if (!this.settingsReady) return;
       const sp = activeSpace();

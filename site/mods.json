@@ -12,7 +12,8 @@
         { "slug": "better-tabs", "title": "Better Tabs", "generated": true },
         { "slug": "better-config", "title": "Better Config", "generated": true },
         { "slug": "better-icons", "title": "Better Icons", "generated": true },
-        { "slug": "better-alerts", "title": "Better Alerts", "generated": true, "needs": ["macOS or Linux"] }
+        { "slug": "better-alerts", "title": "Better Alerts", "generated": true, "needs": ["macOS or Linux"] },
+        { "slug": "better-search", "title": "Better Search", "generated": true, "needs": ["Git"] }
       ]
     },
     {

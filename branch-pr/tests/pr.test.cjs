@@ -1197,3 +1197,38 @@ test("on a light theme, the Files tab takes Better Icons' light pictures", async
   tree = h.mod.render();
   assert.match(strings(find(tree, 'pr-folder-.cursor')), /image:mods\/better-icons\/icons\/folder-cursor_light\.svg/, 'a closed folder takes its light picture');
 });
+
+test('Better Search can ask for a PR: it opens once, in the space it was asked for, while fresh', () => {
+  const h = harness();
+  const opened = [];
+  h.mod.openPR = (number, _cx, repo) => opened.push([number, repo]);
+  h.live.spaces = [{ id: 'space', active: true, folder: '/repo', branch: null, machine: null, tabs: [] }];
+  h.mod.spaceKey = 'local:space:/repo:';
+  h.mod.reopenSaved = true;
+  h.live.shared['branch-pr.open'] = { space: 'other', number: 3, repo: 'owner/repo', at: Date.now() };
+  h.tick();
+  same(opened, []);
+  h.live.shared['branch-pr.open'] = { space: 'space', number: 7, repo: 'fork/repo', at: Date.now() };
+  h.tick();
+  h.tick();
+  same(opened, [[7, 'fork/repo']]);
+  assert.equal(h.mod.reopenSaved, false, 'what was open last time stays shut');
+  assert.equal(h.mod.pr, null);
+  assert.match(strings(h.mod.render()), /Loading #7…/, 'busy until it arrives');
+  h.live.shared['branch-pr.open'] = { space: 'space', number: 8, repo: 'owner/repo', at: Date.now() - 60000 };
+  h.tick();
+  same(opened, [[7, 'fork/repo']]);
+});
+
+test('an ask in a space the panel has not caught up with yet follows the space first, then opens', () => {
+  const h = harness();
+  const opened = [];
+  h.mod.openPR = (number) => opened.push(number);
+  h.live.spaces = [{ id: 'space', active: true, folder: '/repo', branch: null, machine: null, tabs: [] }];
+  h.mod.spaceKey = 'stale';
+  h.live.shared['branch-pr.open'] = { space: 'space', number: 9, repo: 'owner/repo', at: Date.now() };
+  h.mod.takeAsk(h.cx);
+  assert.equal(h.mod.spaceKey, 'local:space:/repo:');
+  same(opened, [9]);
+  assert.equal(h.mod.opening.number, 9, 'the space change did not clear what is loading');
+});

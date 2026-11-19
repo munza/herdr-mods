@@ -31,7 +31,7 @@ Full docs for each (install, use, settings, update, developer use) are on the [s
 
 ### The Better mods
 
-Git, files, spaces, tabs, settings, icons and alerts.
+Git, files, spaces, tabs, settings, icons, alerts and search.
 
 - [Better Changes](better-changes/README.md) (`better-changes`): Git panel with staged, unstaged and unpushed files, stage and unstage, commit and amend, history, and an inline or side-by-side diff tab.
 - [Better Files](better-files/README.md) (`better-files`): read-only file browser that opens files in the centre pane, with a filter that finds any file, Markdown rendered, Git marks, Open in your editor, and a menu that hands a file to an agent.
@@ -40,6 +40,7 @@ Git, files, spaces, tabs, settings, icons and alerts.
 - [Better Config](better-config/README.md) (`better-config`): every installed mod's settings in one dialog drawn like Herdr's Settings, and a list of the mods you have; it writes only what you changed and offers to restore your changes after an update resets them.
 - [Better Icons](better-icons/README.md) (`better-icons`): VS Code's Material Icon Theme for the other mods. With it installed, Better Files, Better Changes and Branch PR show a colour icon for every file and folder; without it, mods keep their plain icons.
 - [Better Alerts](better-alerts/README.md) (`better-alerts`): system notifications on macOS and Linux when an agent needs you or finishes while you're looking elsewhere, with its question or reply; click one to open that agent. Needs Xcode's Command Line Tools on macOS, `notify-send` on Linux.
+- [Better Search](better-search/README.md) (`better-search`): one popup that finds any tab on any machine, agent, space, file, Herdr command, pull request, issue or line an agent printed, with `@ > / ~ ? # $` to narrow it, peek, and a message or a file sent straight to an agent.
 
 ### Branch panels
 
@@ -50,7 +51,7 @@ Your PR and your issues, next to the branch.
 
 ## Estro: all of them in one layout
 
-[Estro](estro/RECIPE.md) puts every mod in one window for directing agents: spaces and agents on the left, the session in the middle, and Files, Changes, PRs and Issues in a panel on the right. One prompt installs the layout and all seven mods:
+[Estro](estro/RECIPE.md) puts every mod in one window for directing agents: spaces and agents on the left, the session in the middle, and Files, Changes, PRs and Issues in a panel on the right. One prompt installs the layout and all eight mods:
 
 ```text
 Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/munza/herdr-mods/tree/main/estro

@@ -57,7 +57,7 @@
 
   <h3 id="estro-install">Install</h3>
   <div class="prompt"><code>Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/munza/herdr-mods/tree/main/estro</code></div>
-  <p>The agent copies <code>layouts/estro.json</code>, then adds all seven mods with each mod's own prompt, telling you what each can do as it goes. It skips each mod's layout step, because Estro already places it, and updates any mod you already have. It never overwrites a mod or a layout already there under the same name. Last, it runs <code>herdr-app check</code> on each mod and switches to the layout.</p>
+  <p>The agent copies <code>layouts/estro.json</code>, then adds all eight mods with each mod's own prompt, telling you what each can do as it goes. It skips each mod's layout step, because Estro already places it, and updates any mod you already have. It never overwrites a mod or a layout already there under the same name. Last, it runs <code>herdr-app check</code> on each mod and switches to the layout.</p>
   <p>Branch PR needs <code>gh</code>. Branch Issue needs a Linear API key or, in GitHub mode, authenticated <code>gh</code>. Both need Go 1.23+ to build their helper. Tell the agent to leave out any of them, and it drops that mod's button and block.</p>
 
   <h3 id="estro-use">Use</h3>
@@ -65,6 +65,7 @@
     <li><b>Sidebar, 268px:</b> Herdr's brand block, then Better Sidebar's spaces and agents in one block under Spaces and Agents tabs, with each space's tabs beneath it, and its one-line footer with Settings, Mod settings (<a href="better-config.html">Better Config</a>) and Add machine.</li>
     <li><b>Work area:</b> <a href="better-tabs.html">Better Tabs</a> at the top with Better Sidebar's panel toggle at the far right, the active tab's terminals in the middle, and Herdr's status bar at the bottom.</li>
     <li><b>The panel, 368px:</b> one view at a time, picked from the Better Tabs toolbar: Files, Changes, PRs and Issues. Each space remembers which panel it had open.</li>
+    <li><b>Search:</b> <b>⌘⌥P</b> opens <a href="better-search.html">Better Search</a> over everything: any tab on any machine, agent, space, file, command, pull request or issue.</li>
   </ul>
 
   <h3 id="estro-update">Update</h3>

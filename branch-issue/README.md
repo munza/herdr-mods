@@ -143,6 +143,8 @@ go -C helper run ./install --update
 
 ## For developers
 
+Shared `branch-issue.open`, `{ space, identifier, at }`, opens that item: a copy showing the space `space` opens it within 10 seconds of `at`, once. [Better Search](../better-search/README.md) writes it for `$` (since 2.5.0).
+
 Command: `branch-issue.refresh` reloads the panel. Commands reach copies that are showing.
 
 The helper, `mods/branch-issue/bin/herdr-linear`, is a JSON bridge to Linear's GraphQL API, with validated requests and a 26-second timeout. The branch-to-issue link is plain Git config, comma separated, so you can set it yourself:

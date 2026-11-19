@@ -23,7 +23,7 @@ A row filling the window, with no title bar, `canvas` behind and 1px `border` di
 | PRs | Branch PR | What's in the way of a merge, and handing it to an agent |
 | Issues | Branch Issue | Linear issues and starting work on one, or read-only GitHub Issues |
 
-Better Config has no block: it's a dialog of every mod's settings, opened from the footer's Mod settings button.
+Better Config has no block: it's a dialog of every mod's settings, opened from the footer's Mod settings button. Better Search has none either: it's a popup that finds any tab, agent, space, file, command, pull request or issue, opened by its key (**⌘⌥P**).
 
 The toolbar's buttons are `panel` actions with `container: "panel"` and `stack: "panel-body"`, and each space remembers its panel through `rememberPanels`.
 
@@ -35,7 +35,7 @@ Copy only `layouts/estro.json`. Then add each mod with its pointer's prompt, for
 
 > Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-changes
 
-Do that for `better-files`, `better-changes`, `better-sidebar`, `better-tabs`, `better-config`, `branch-pr` and `branch-issue`, reading each mod's README and telling the person what it can do first. Skip any step in a mod's recipe that places it in a layout, because Estro already does. Where a mod is already installed, update it instead.
+Do that for `better-files`, `better-changes`, `better-sidebar`, `better-tabs`, `better-config`, `better-search`, `branch-pr` and `branch-issue`, reading each mod's README and telling the person what it can do first. Skip any step in a mod's recipe that places it in a layout, because Estro already does. Where a mod is already installed, update it instead.
 
 Anyone who doesn't want one of them can drop its button and block from the layout. Branch PR needs `gh`; Branch Issue needs a Linear key or, in GitHub mode, authenticated `gh`. Both need Go 1.23+ to build their helper.
 
@@ -45,7 +45,7 @@ Then `herdr-app check` each mod and `layout.switch {"name": "estro"}`.
 
 Built and tested against Herdr 0.1.16.
 
-`layouts/estro.json`, with `cloned_from` Herdr's `main`, and `mods/`, a one-line pointer for each of `better-files`, `better-sidebar`, `better-tabs`, `better-changes`, `better-config`, `branch-pr` and `branch-issue`. `workspace-chrome` and `workspace-status` ship with Herdr. Each mod's own `RECIPE.md` in [munza/herdr-mods](https://github.com/munza/herdr-mods) is the brief for that mod.
+`layouts/estro.json`, with `cloned_from` Herdr's `main`, and `mods/`, a one-line pointer for each of `better-files`, `better-sidebar`, `better-tabs`, `better-changes`, `better-config`, `better-search`, `branch-pr` and `branch-issue`. `workspace-chrome` and `workspace-status` ship with Herdr. Each mod's own `RECIPE.md` in [munza/herdr-mods](https://github.com/munza/herdr-mods) is the brief for that mod.
 
 ## Watch out
 

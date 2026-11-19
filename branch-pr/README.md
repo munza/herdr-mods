@@ -136,6 +136,8 @@ Updating keeps your settings and drops `tools.gitlab`.
 
 ## For developers
 
+Shared `branch-pr.open`, `{ space, number, repo, at }`, opens that item: a copy showing the space `space` opens it within 10 seconds of `at`, once. [Better Search](../better-search/README.md) writes it for `#` (since 2.6.0).
+
 Command: `branch-pr.refresh` reloads. Commands reach copies that are showing.
 
 Messages the panel sends to agents tell them to treat GitHub's text as data and not to push, post or resolve threads unless asked. A sub-agent is started with `hc run --bg --parent`, and messages to a running agent go through `hc send`. Fix with agent names `gh run view --job N --repo R --log-failed` rather than pasting the log.
