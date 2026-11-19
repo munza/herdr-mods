@@ -19,6 +19,7 @@ import {
 import { PRStatusObserver, prPlaceKey, prAppearance } from "../git/pr-status.js";
 import { spaceFolder, checkoutKey, readCheckout } from "../git/checkouts.js";
 import { loadSettings, duration } from "../settings.js";
+import { DEFAULT_SETTINGS } from "../defaults.js";
 import { findNode } from "./find-node.js";
 import { TEXT, Icon, IconButton, Badge, Rail, Menu, MenuLabel, MenuOption } from "./ui.js";
 
@@ -40,9 +41,6 @@ const GIT_FALLBACK_MS = 15000;
 // A shown-space change this soon after a press in the list came from that press, so the
 // row under the pointer stays where it is.
 const CLICK_MS = 1000;
-// Preferences a person may change in the installed mod.json under `settings`.
-// `combined` is read by the lists view: tabs, or spaces above agents.
-const DEFAULT_SETTINGS = { git: { retry_after: "15s" }, pull_request_status: true, combined: true };
 
 // What a stored color name looks like on an avatar (the same in every mod
 // that draws space avatars): one strong color per hue, light and dark alike.

@@ -80,7 +80,7 @@ function read(file) {
 
 function load(h, file, name) {
   if (!h.kitLoaded) {
-    vm.runInContext(read("views/find-node.js") + read("views/ui.js"), h.context);
+    vm.runInContext(read("settings.js") + read("defaults.js") + read("views/find-node.js") + read("views/ui.js"), h.context);
     h.kitLoaded = true;
   }
   const source = read(file);
@@ -95,7 +95,7 @@ const find = (node, id) =>
   node?.id === id ? node : node?.nodes?.map((n) => find(n, id)).find(Boolean);
 const strings = (node) =>
   typeof node === "string" ? node : (node?.nodes ?? []).map(strings).join(" ");
-const cx = { timer: { every() {} }, notify() {}, stop_propagation() {}, focus_handle: () => ({}) };
+const cx = { timer: { every() {} }, notify() {}, stop_propagation() {}, focus_handle: () => ({}), spawn() {} };
 
 function agents(sort) {
   const h = harness("agents");
@@ -280,4 +280,25 @@ test("the panel toggle hides the right panel by click and key, and names what it
   assert.ok(find(toggle.render(), "panel-toggle"));
   h.live.root = { id: "root", children: [] };
   assert.equal(find(toggle.render(), "panel-toggle"), undefined, "no panel, no button");
+});
+
+test("agent_name: title names a row by the terminal's live title, falling back to its tab's name", async () => {
+  const h = harness("agents");
+  h.live.files = { "/app/mods/better-sidebar/mod.json": JSON.stringify({ settings: { agent_name: "title" } }) };
+  const mod = load(h, "views/agents.js", "Agents");
+  const pending = [];
+  mod.init({}, { ...cx, spawn: (fn) => pending.push(fn(cx)) });
+  assert.equal(mod.rowName({ tab_name: "2", title: "✳ Fix login redirect" }, "2"), "2", "the tab until the settings are read");
+  await Promise.all(pending);
+  assert.equal(mod.rowName({ tab_name: "2", title: "✳ Fix login redirect" }, "2"), "Fix login redirect");
+  assert.equal(mod.rowName({ tab_name: "Work", title: "" }, "Work"), "Work", "no title: the tab");
+  assert.equal(mod.rowName({ tab_name: "", title: "⠂ " }, "label"), "label", "a title that's only a spinner counts as none");
+});
+
+test("agent_name defaults to the tab's name, whatever the terminal's title", () => {
+  const h = harness("agents");
+  const mod = load(h, "views/agents.js", "Agents");
+  mod.init({}, cx);
+  assert.equal(mod.rowName({ tab_name: "Work", title: "Fix login redirect" }, "Work"), "Work");
+  assert.equal(mod.rowName({ tab_name: "", title: "Fix login redirect" }, "label"), "label");
 });

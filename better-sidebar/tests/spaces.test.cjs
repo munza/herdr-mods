@@ -109,6 +109,7 @@ function harness(stored = {}) {
   vm.createContext(context);
   for (const file of [
     "settings.js",
+    "defaults.js",
     "git/pr-status.js",
     "git/checkouts.js",
     "views/find-node.js",

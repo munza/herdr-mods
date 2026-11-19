@@ -89,6 +89,19 @@
           "description": "Colour spaces by their pull request's state, through the GitHub CLI. Turn off if you don't have gh.",
           "type": "boolean",
           "default": true
+        },
+        "agent_name": {
+          "title": "Agent names",
+          "description": "What each agent row is called: its tab's name, as Herdr's tab bar shows it, or the terminal's live title, which agents set to what they're doing. Either falls back to the other.",
+          "enum": [
+            "tab",
+            "title"
+          ],
+          "x-labels": {
+            "tab": "Tab name",
+            "title": "Terminal title"
+          },
+          "default": "tab"
         }
       }
     }

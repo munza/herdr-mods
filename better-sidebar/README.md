@@ -101,6 +101,7 @@ The PR badge has no merge or review controls. Selecting its row selects the spac
 | `git.retry_after` | `15s` | How long a failed Git read waits before it's tried again. |
 | `combined` | `true` | Show the `lists` view as Spaces and Agents tabs. `false` stacks spaces above agents in the same block. |
 | `pull_request_status` | `true` | Colour spaces by their PR's state through the GitHub CLI. Set `false` if you don't have `gh`. |
+| `agent_name` | `tab` | What each agent row is called: `tab` for its tab's name, `title` for the terminal's live title, which agents set to what they're doing. Either falls back to the other. |
 
 ## Update
 
