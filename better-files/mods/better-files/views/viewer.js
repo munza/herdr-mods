@@ -17,7 +17,7 @@ import {
   resolvePath,
   viewable,
 } from "../files/model.js";
-import { WHOLE_FILE_LINES, fenceLanguage, highlightLines, languageOf as lexerLanguage, syntaxColors, tokenizeLine } from "../syntax.js";
+import { WHOLE_FILE_LINES, fenceLanguage, languageOf as lexerLanguage, syntaxColors, tokenizeLine } from "../syntax.js";
 import { viewerEntries } from "../actions/open.js";
 import { BUSY, pickCopyImage, pickRm } from "../files/shell.js";
 import { editorId, foundEditors } from "../actions/outside.js";
@@ -28,6 +28,8 @@ const CHAR_WIDTH = 0.62; // Of the code font's size, to size the sideways scroll
 const LINE_COLUMNS = 6; // The number column and a margin, in the same units.
 const rowHeight = () => Math.round(codeSize() * 1.6);
 const REMOVED_ROW = 8;
+const COLOR_CHARS = 4000;
+const COLOR_TICK_MS = 16;
 
 // Copies go in a hidden folder: saving any other file in a mod's folder makes Herdr reload
 // the mod, which threw the tree away on every picture opened. The copy itself, and how it's
@@ -53,16 +55,6 @@ const webName = (url) => {
   for (let i = 0; i < url.length; i++) hash = Math.imul(hash ^ url.charCodeAt(i), 16777619);
   return `web-${(hash >>> 0).toString(16)}`;
 };
-
-// A code block's lines as runs, coloured once per block; a huge one, or one the lexer fails
-// on, stays plain.
-function codeRuns(block) {
-  const lines = block.text.split("\n");
-  try {
-    if (lines.length <= WHOLE_FILE_LINES) return highlightLines(lines, fenceLanguage(block.lang));
-  } catch {}
-  return lines.map((line) => [{ text: line, kind: null }]);
-}
 
 export const viewerMethods = {
   // What this tab shows: the registry, then what it was opened with, after a restart.
@@ -120,6 +112,7 @@ export const viewerMethods = {
       cx.notify();
     }
     this.publishHead();
+    this.colorStep(cx);
   },
 
   // Asked on every check, not just when the text changes: a commit clears marks without
@@ -304,23 +297,63 @@ export const viewerMethods = {
   },
 
   // Coloured once per version too, top to bottom, so a comment or string opened on one
-  // line is still one on the next. A huge file, or one the lexer fails on, gets no runs
-  // here: its rows are coloured one at a time as they're drawn (`rowRuns`). The runs are
-  // kept only once they're complete, so a row never shows another file's text.
+  // line is still one on the next, in steps by `colorStep`. Until those finish, and for a
+  // huge file or one the lexer fails on, there are no runs here: rows are coloured one at a
+  // time as they're drawn (`rowRuns`). The runs are kept only once they're complete, so a row
+  // never shows another file's text.
   lineRuns(lines) {
     // Keyed on the path too: two files with the same text share `lines`, not a language.
     if (this.runsFor !== lines || this.runsPath !== this.file.path) {
-      let runs = null;
-      if (lines.length <= WHOLE_FILE_LINES) {
-        try {
-          runs = highlightLines(lines, lexerLanguage(this.file.path));
-        } catch {}
-      }
-      this.runs = runs;
+      const path = this.file.path;
+      this.runs = null;
       this.runsFor = lines;
-      this.runsPath = this.file.path;
+      this.runsPath = path;
+      if (lines.length <= WHOLE_FILE_LINES)
+        this.colorLater(lines, lexerLanguage(path), {
+          live: () => this.runsFor === lines && this.runsPath === path,
+          done: (runs) => (this.runs = runs),
+        });
     }
     return this.runs;
+  },
+
+  colorLater(lines, language, { live, done }) {
+    (this.colorJobs ??= []).push({ lines, language, live, done, runs: [], state: null });
+  },
+
+  colorStep(cx) {
+    const jobs = this.colorJobs;
+    if (this.colorQueued || !jobs?.length) return;
+    let budget = COLOR_CHARS;
+    while (budget > 0 && jobs.length) {
+      const job = jobs[0];
+      if (!job.live()) {
+        jobs.shift();
+        continue;
+      }
+      try {
+        while (budget > 0 && job.runs.length < job.lines.length) {
+          const line = job.lines[job.runs.length];
+          const result = tokenizeLine(line, job.language, job.state);
+          job.state = result.state;
+          job.runs.push(result.runs);
+          budget -= line.length + 1;
+        }
+      } catch {
+        jobs.shift();
+        continue;
+      }
+      if (job.runs.length < job.lines.length) break;
+      jobs.shift();
+      job.done(job.runs);
+      cx.notify();
+    }
+    if (!jobs.length) return;
+    this.colorQueued = true;
+    cx.timer.after(COLOR_TICK_MS, (cx) => {
+      this.colorQueued = false;
+      this.colorStep(cx);
+    });
   },
 
   // One row's runs: from the whole-file pass when there is one, else that line on its own.
@@ -595,8 +628,17 @@ export const viewerMethods = {
   previewCode(block, i) {
     const t = theme();
     const SYNTAX = syntaxColors(t);
-    block.runs ??= codeRuns(block);
-    const widest = block.text.split("\n").reduce((n, line) => Math.max(n, line.length), 0);
+    const lines = block.text.split("\n");
+    if (!block.runs && !block.queued) {
+      block.queued = true;
+      if (lines.length <= WHOLE_FILE_LINES)
+        this.colorLater(lines, fenceLanguage(block.lang), {
+          live: () => this.blocks?.includes(block),
+          done: (runs) => (block.runs = runs),
+        });
+    }
+    const blockRuns = block.runs ?? lines.map((line) => [{ text: line, kind: null }]);
+    const widest = lines.reduce((n, line) => Math.max(n, line.length), 0);
     const copied = this.copiedCode === i;
     return v_flex()
       .id(`viewer-code-${i}`)
@@ -647,7 +689,7 @@ export const viewerMethods = {
               .font_family(codeFont())
               .text_size(codeSize())
               .children(
-                block.runs.map((runs) =>
+                blockRuns.map((runs) =>
                   h_flex()
                     .h(rowHeight())
                     .items_center()
