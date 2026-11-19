@@ -171,10 +171,21 @@ ${OPEN_SH}`;
 export const fileUri = (path) => "file://" + String(path).split("/").map(encodeURIComponent).join("/");
 const containingFolder = (path) => String(path).replace(/\/+$/, "").replace(/\/[^/]*$/, "") || "/";
 
-const fileManagerName = (platform) => (isWin(platform) ? "Explorer" : isLinux(platform) ? "file manager" : "Finder");
-export const revealLabel = (platform) => `Show in ${fileManagerName(platform)}`;
-export const openFolderLabel = (platform) => `Open in ${fileManagerName(platform)}`;
-export const revealError = (platform) => `show it in ${isLinux(platform) ? "the file manager" : fileManagerName(platform)}`;
+// --- A file manager of the person's own (settings.fileManager) ---
+// Its command, then the file or folder: for Show in, the item; for the folder menu, the folder. On any platform.
+export function pickOwnFileManager(own, path) {
+  return { program: own.command[0], args: [...own.command.slice(1), path] };
+}
+
+// `own`: the person's file manager, named or not; else the platform's.
+const fileManagerName = (platform, own) =>
+  own ? own.name || "file manager" : isWin(platform) ? "Explorer" : isLinux(platform) ? "file manager" : "Finder";
+export const revealLabel = (platform, own) => `Show in ${fileManagerName(platform, own)}`;
+export const openFolderLabel = (platform, own) => `Open in ${fileManagerName(platform, own)}`;
+export const revealError = (platform, own) => {
+  const name = fileManagerName(platform, own);
+  return `show it in ${name === "file manager" ? "the file manager" : name}`;
+};
 
 // --- Editor detection ---
 // macOS: one mdfind per bundle ID (unchanged).
