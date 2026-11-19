@@ -39,7 +39,7 @@ Git, files, spaces, tabs, settings, icons and alerts.
 - [Better Tabs](better-tabs/README.md) (`better-tabs`): tabs you drag that wrap onto more lines and name themselves after what runs in them, a toolbar for panels, and a ⋮ menu to hide and pin them.
 - [Better Config](better-config/README.md) (`better-config`): every installed mod's settings in one dialog drawn like Herdr's Settings, and a list of the mods you have; it writes only what you changed and offers to restore your changes after an update resets them.
 - [Better Icons](better-icons/README.md) (`better-icons`): VS Code's Material Icon Theme for the other mods. With it installed, Better Files, Better Changes and Branch PR show a colour icon for every file and folder; without it, mods keep their plain icons.
-- [Better Alerts](better-alerts/README.md) (`better-alerts`): system notifications on Linux when an agent needs you or finishes while you're looking elsewhere; click one to open that agent. Needs `notify-send`.
+- [Better Alerts](better-alerts/README.md) (`better-alerts`): system notifications on macOS and Linux when an agent needs you or finishes while you're looking elsewhere, with its question or reply; click one to open that agent. Needs Xcode's Command Line Tools on macOS, `notify-send` on Linux.
 
 ### Branch panels
 
