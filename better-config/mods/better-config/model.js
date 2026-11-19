@@ -3,14 +3,17 @@
 //
 // A mod describes its settings in mods/<name>/mod.schema.json, a JSON Schema of its whole
 // mod.json. Under properties.settings, each setting has the standard title, description,
-// type, default, enum, minimum and maximum, plus format "duration" or "size", and x-step,
-// x-unit and x-labels ({ "id": "Label" } for an enum). mod.json's own settings block holds
+// type, default, enum, minimum and maximum, plus format "duration", "size" or "key", and
+// x-step, x-unit and x-labels ({ "id": "Label" } for an enum). A "key" setting names, in
+// x-action, the keys.json action it binds ("mod.open:better-search"). mod.json's own settings block holds
 // only what the person changed. A key there the schema doesn't describe still shows.
 
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
-export const TYPES = ["boolean", "number", "choice", "duration", "size", "text", "list"];
+export const TYPES = ["boolean", "number", "choice", "duration", "size", "key", "text", "list"];
 const DURATION = /^\s*\d+(?:\.\d+)?\s*(ms|s|m|h)\s*$/;
 const SIZE = /^\s*\d+(?:\.\d+)?\s*(B|KB|MB)\s*$/i;
+// "cmd-p", "cmd-alt-shift-]", "ctrl--": keys.json's spelling, without spaces.
+const KEY = /^\S+$/;
 
 // { "a.b": 1 } from { a: { b: 1 } }. Lists are values, not branches.
 export function flatten(obj, prefix = "", out = {}) {
@@ -77,6 +80,7 @@ function typeOf(spec) {
   const types = [spec.type].flat();
   if (Array.isArray(spec.enum)) return "choice";
   if (spec.format === "duration" || spec.format === "size") return spec.format;
+  if (spec.format === "key" && typeof spec["x-action"] === "string") return "key";
   if (types.includes("boolean")) return "boolean";
   if (types.includes("integer") || types.includes("number")) return "number";
   if (types.includes("array")) return "list";
@@ -114,6 +118,7 @@ export function fieldsOf(schema, settings) {
       max: typeof spec.maximum === "number" ? spec.maximum : null,
       step: typeof spec["x-step"] === "number" && spec["x-step"] > 0 ? spec["x-step"] : 1,
       unit: typeof spec["x-unit"] === "string" ? spec["x-unit"] : "",
+      action: typeof spec["x-action"] === "string" ? spec["x-action"] : null,
     };
   });
   const known = new Set(fields.map((f) => f.key));
@@ -131,6 +136,7 @@ export function fieldsOf(schema, settings) {
         max: null,
         step: 1,
         unit: "",
+        action: null,
       });
   return fields;
 }
@@ -158,6 +164,8 @@ export function problemWith(field, value) {
     return (typeof value === "number" && value >= 0) || (typeof value === "string" && SIZE.test(value))
       ? null
       : 'Should be a size such as "60KB" or "2MB".';
+  if (type === "key")
+    return typeof value === "string" && KEY.test(value) ? null : 'Should be a key such as "cmd-alt-p".';
   if (type === "list")
     return Array.isArray(value) && value.every((v) => typeof v === "string")
       ? null
@@ -172,6 +180,7 @@ export function parseInput(field, text) {
   if (field.type === "number") value = trimmed === "" ? NaN : Number(trimmed);
   else if (field.type === "list") value = trimmed ? trimmed.split(",").map((s) => s.trim()).filter(Boolean) : [];
   else if ((field.type === "duration" || field.type === "size") && /^\d+$/.test(trimmed)) value = Number(trimmed);
+  else if (field.type === "key") value = trimmed.toLowerCase();
   const error = problemWith(field, value);
   return error ? { error } : { value };
 }
@@ -278,4 +287,27 @@ export function filterInstalled(rows, tab, query) {
   return rows.filter(
     (row) => row.herdr === (tab === "herdr") && `${row.title} ${row.name}`.toLowerCase().includes(text),
   );
+}
+
+// keys.json with `action` moved onto `key` in its global section. A key that did something
+// else is taken, and what it did goes in `displaced` ({ key: action }); when the action
+// moves off a key again, what that key did before comes back.
+export function rebind(keys, displaced, action, key) {
+  keys = isObject(keys) ? { ...keys } : {};
+  displaced = isObject(displaced) ? { ...displaced } : {};
+  const global = isObject(keys.global) ? { ...keys.global } : {};
+  for (const old of Object.keys(global).filter((k) => equal(global[k], action))) {
+    delete global[old];
+    if (old in displaced) {
+      global[old] = displaced[old];
+      delete displaced[old];
+    }
+  }
+  let took = null;
+  if (key) {
+    if (key in global && !equal(global[key], action)) took = displaced[key] = global[key];
+    global[key] = action;
+  }
+  keys.global = global;
+  return { keys, displaced, took };
 }

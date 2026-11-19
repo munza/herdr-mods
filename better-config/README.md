@@ -117,6 +117,7 @@ The schema describes Herdr's own fields and, under `properties.settings`, each s
 | `type` | `boolean`; `integer` or `number`; `string`; `array` of strings for a list. |
 | `enum` | A fixed set of choices. Up to four show as buttons, more as a dropdown. `x-labels` names them: `{ "value": "Label" }`. |
 | `format` | `duration` (`450ms`, `10s`) or `size` (`60KB`), with `type: ["string", "integer"]` since a bare number is also accepted. Add a `pattern` so editors check it. |
+| `format: "key"` | A key that opens something, as `keys.json` spells it (`cmd-alt-p`), with `x-action` naming what it runs (`mod.open:my-mod`). A change also moves the binding in `keys.json`'s `global` section. A key already used for something else is taken over, and what it did comes back when the setting moves off it. |
 | `minimum`, `maximum` | A number's limits. `x-step` is how far − and + move it, `x-unit` a unit shown beside it, such as `px`. |
 
 Only these keywords are read; `oneOf`, `$ref` and the like are ignored. The shipped `mod.json` has no `settings` block: it holds only what a person changes, and the mod uses its own defaults for the rest. Every mod in this repository ships a schema, and a test checks that each `mod.json` passes it and its defaults equal the mod's code.
