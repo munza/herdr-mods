@@ -1,0 +1,31 @@
+{
+  "repo": "https://github.com/munza/herdr-mods",
+  "groups": [
+    {
+      "title": "The Better mods",
+      "filter": "better",
+      "label": "Better mods",
+      "mods": [
+        { "slug": "better-changes", "title": "Better Changes", "generated": true, "needs": ["Git"] },
+        { "slug": "better-files", "title": "Better Files", "generated": true, "needs": ["Git", "`sh`"] },
+        { "slug": "better-sidebar", "title": "Better Sidebar", "generated": true, "needs": ["Git", "`gh`"] },
+        { "slug": "better-tabs", "title": "Better Tabs", "generated": true },
+        { "slug": "better-config", "title": "Better Config", "generated": true },
+        { "slug": "better-icons", "title": "Better Icons", "generated": true },
+        { "slug": "better-alerts", "title": "Better Alerts", "generated": true, "needs": ["Linux", "`notify-send`"] }
+      ]
+    },
+    {
+      "title": "Branch panels",
+      "filter": "branch",
+      "mods": [
+        { "slug": "branch-pr", "title": "Branch PR", "generated": true, "needs": ["Go 1.23+", "Git", "`gh`"] },
+        { "slug": "branch-issue", "title": "Branch Issue", "generated": true, "needs": ["Go 1.23+", "Git", "a Linear API key"] }
+      ]
+    },
+    {
+      "title": "Layout",
+      "mods": [{ "slug": "estro", "title": "Estro" }]
+    }
+  ]
+}

@@ -92,7 +92,7 @@ node --test */tests/*.test.cjs
 for d in */helper; do (cd "$d" && go test ./... && go vet ./...); done
 ```
 
-The mods run on Herdr's JavaScript runtime; Node.js is only for the tests. Each README lists what its mod calls at runtime (Git, `gh`, `hc`, Claude Code, macOS permissions).
+The mods run on Herdr's JavaScript runtime; Node.js is only for the tests and the site. `node site/build.cjs` builds the site into `_site/`, generating each mod's docs page and home-page card from its README; [site/README.md](site/README.md) says how a README is laid out for that. Each README lists what its mod calls at runtime (Git, `gh`, `hc`, Claude Code, macOS permissions).
 
 ## License
 

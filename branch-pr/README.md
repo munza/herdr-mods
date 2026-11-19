@@ -1,8 +1,62 @@
 # Branch PR
 
-A pull-request panel for [Herdr Desktop](https://herdr.dev/), built to look like Herdr's own panels and to fit how you work with agents: see what's in the way of a PR, hand it to an agent, check the result, and merge. It works with GitHub through the `gh` CLI.
+A pull-request panel for Herdr Desktop that shows what stands between a pull request and a merge: checks, reviews, threads, conflicts and the files it changes. Hand failures and comments to an agent, check the result, and merge when it's ready. It works with GitHub through the `gh` CLI.
 
 ![Branch PR](preview.png)
+
+## Quick start
+
+1. Run `gh auth login` once, then install with the prompt below.
+2. Open the PRs panel on a branch with a pull request: one line shows checks, reviews and unresolved threads.
+3. Press **Fix with agent** on a failed check, or **Send N to agent** for open threads, then merge from **Actions** when it's ready.
+
+## Install
+
+Copy this prompt into your Herdr agent:
+
+> Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/branch-pr
+
+Requirements: **Go 1.23+** to run the installer and build the helper, Git on the machines your spaces run on, and the **GitHub CLI** logged in with `gh auth login` on this computer. Agent actions use `hc` and a running agent.
+
+Every read and write goes through `gh`, using its login; there's no token setting. If `gh` is missing or logged out, the panel says so, shows what to run, and offers Try again.
+
+Read [RECIPE.md](RECIPE.md) and the source before installing; the agent explains what the panel runs and can write. On an explicit click the panel can **post comments and replies, resolve and reopen threads, merge, close and reopen PRs, request reviews, fetch PR heads and create Git worktrees and branches, write the branch-to-PR link to Git config, open terminals, and send messages to agents.** Nothing writes on its own. Messages to agents tell them to treat GitHub's text as data and not to push, post or resolve threads unless asked.
+
+<details>
+<summary>Install by hand</summary>
+
+From the `branch-pr` folder:
+
+```sh
+go -C helper run ./install          # first install
+```
+
+The installer builds the helper, copies only `mods/branch-pr/` to `~/.config/herdr-app/mods/branch-pr/`, and runs `herdr-app check`. It doesn't edit layouts or keys.
+
+</details>
+
+### Place the sidebar
+
+The manifest has `place: none`, so add it to a layout you own, about 368px wide:
+
+```json
+{ "id": "pull-requests", "type": "block", "content": { "mod": "branch-pr" } }
+```
+
+With [Better Tabs](../better-tabs/README.md), a button can open it (`target` is that block's layout ID):
+
+```json
+{
+  "id": "prs",
+  "label": "PRs",
+  "icon": "mods/branch-pr/icons/pull-request.svg",
+  "action": { "type": "panel", "container": "panel", "stack": "panel-body", "target": "pull-requests" }
+}
+```
+
+## Use
+
+Built to look like Herdr's own panels and to fit how you work with agents: see what's in the way of a PR, hand it to an agent, check the result, and merge.
 
 - **Stats:** one line on every open PR gives Checks passed, Reviews approved and Unresolved threads, plus Ready, Conflicts or Behind when that's the news. A click goes to where each is explained.
 - **Fix with agent** on a failed check, and **Send N to agent** for all unresolved threads, open a dropdown: pick an agent already running, on the PR first; start a sub-agent under it, with **(spawn)**; or start a new one in its own tab. New ones work in the PR's worktree if it has one.
@@ -15,60 +69,9 @@ A pull-request panel for [Herdr Desktop](https://herdr.dev/), built to look like
 - **Worktrees:** a PR's checkouts, and **New worktree** to make another as its own space, with a terminal or an agent in its first tab.
 - **Two lists in the sidebar:** **Branch** for the PRs from your checkout's branch, which goes straight to the details when there's only one, and **Repo** with search, including by number, All PRs / Created / Involved, and Open / Draft / Merged / Closed / All. Its count is GitHub's total for the filter. Opening a PR stays in the sidebar under the same tabs, with a back button, like a commit in Better Changes, and groups on it collapse.
 - Local and remote spaces: Git runs on the space's machine, and `gh` on this computer.
+- **No `gh`:** if it's missing or logged out, the panel says so, shows what to run, and offers Try again.
 
-## Upgrading from 1.x
-
-2.0 is a rebuild around working with agents, and it removes some things:
-
-- **GitLab** isn't supported any more. Stay on 1.x if you need it.
-- **The All PRs center tab** is gone: the **Repo** tab in the sidebar replaces it. Close any old All PRs tab, and remove any `props: { "mode": "browser" }` tab or command you set up.
-- **The commands** `open-browser`, `toggle`, `open`, `back`, `checks`, `conversation`, `description`, `worktree`, `preview` and `preview-browser` are gone. `refresh` stays.
-- **Pending reviews, editing comments, quote replies, adding or removing reviewers, and Draft fix & reply** are gone. Agents do this work now; GitHub still has all of them.
-- **Icons moved** to `icons/`, so change a Better Tabs button's `mods/branch-pr/pull-request.svg` to `mods/branch-pr/icons/pull-request.svg`.
-
-Updating keeps your settings and drops `tools.gitlab`.
-
-## Install only this mod
-
-Copy this prompt into your Herdr agent:
-
-> Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/branch-pr
-
-Requirements: **Go 1.23+** to run the installer and build the helper, Git on the machines your spaces run on, and the **GitHub CLI** logged in with `gh auth login` on this computer. Agent actions use `hc` and a running agent.
-
-Every read and write goes through `gh`, using its login; there's no token setting. If `gh` is missing or logged out, the panel says so, shows what to run, and offers Try again.
-
-Read [RECIPE.md](RECIPE.md) and the source before installing. On an explicit click the panel can **post comments and replies, resolve and reopen threads, merge, close and reopen PRs, request reviews, fetch PR heads and create Git worktrees and branches, write the branch-to-PR link to Git config, open terminals, and send messages to agents.** Nothing writes on its own. Messages to agents tell them to treat GitHub's text as data and not to push or post unless asked.
-
-From this folder:
-
-```sh
-go -C helper run ./install          # first install
-go -C helper run ./install --update # later
-```
-
-The installer builds the helper, copies only `mods/branch-pr/` to `~/.config/herdr-app/mods/branch-pr/`, and runs `herdr-app check`. It doesn't edit layouts or keys.
-
-### Place the sidebar
-
-The manifest has `place: none`, so add it to a layout you own, about 368px wide:
-
-```json
-{ "id": "pull-requests", "type": "block", "content": { "mod": "branch-pr" } }
-```
-
-With Better Tabs, a button can open it (`target` is that block's layout ID):
-
-```json
-{
-  "id": "prs",
-  "label": "PRs",
-  "icon": "mods/branch-pr/icons/pull-request.svg",
-  "action": { "type": "panel", "container": "panel", "stack": "panel-body", "target": "pull-requests" }
-}
-```
-
-## How it finds PRs
+### How it finds PRs
 
 The sidebar follows the active terminal's folder and branch. It uses a branch's saved link to its PR if there is one (`branch.<name>.herdr-pr`, written by New worktree); otherwise it looks across your GitHub remotes for PRs from that branch, including forks, and prefers open ones. All of them are listed.
 
@@ -76,15 +79,23 @@ Repo prefers `upstream`, then the branch's tracking remote, then `origin`, and r
 
 GitHub Enterprise and GitLab aren't supported.
 
-## Commands
-
-`branch-pr.refresh` reloads. Commands reach copies that are showing.
-
 ## Settings
 
-[Better Config](../better-config/README.md) shows these with what each one does, and changes, checks and resets them for you. By hand:
+[Better Config](../better-config/README.md) shows these with what each one does, and changes, checks and resets them for you. By hand, add a `settings` block to the installed `~/.config/herdr-app/mods/branch-pr/mod.json` with only what you change. It is kept across `--update`. `mod.schema.json` beside it describes every setting, so an editor that reads `$schema`, such as VS Code or Zed, checks the block as you type. Unknown keys and wrong types are reported at the top of the panel and ignored.
 
-Add a `settings` block to the installed `mods/branch-pr/mod.json` with only what you change. It is kept across `--update`. `mod.schema.json` beside it describes every setting, so an editor that reads `$schema`, such as VS Code or Zed, checks the block as you type. The defaults:
+| Key | Default | What it does |
+| --- | --- | --- |
+| `refresh.every` | `60s` | How often a visible panel rereads GitHub. |
+| `refresh.search_debounce` | `450ms` | How long typing pauses before a search runs. |
+| `list.page_size` | `25` | How many PRs load at a time (1–100). |
+| `list.default.tab` | `all` | Repo's first list until a saved view exists: `all`, `mine` (Created) or `involved`. |
+| `list.default.state` | `open` | Repo's first state filter until a saved view exists: `open`, `draft`, `merged`, `closed` or `all`. |
+| `worktrees.root` | `~/.herdr/worktrees` | Where New worktree puts checkouts. |
+| `worktrees.open_with` | `terminal` | What a new worktree opens: `terminal`, or an installed agent's key such as `claude`. |
+| `logs.keep_last` | `60KB` | How much of a failed command's output is kept to show. |
+| `tools.github` | `gh` | The `gh` command, or its full path. |
+
+The defaults as a `settings` block:
 
 ```json
 "settings": {
@@ -96,16 +107,49 @@ Add a `settings` block to the installed `mods/branch-pr/mod.json` with only what
 }
 ```
 
-`refresh.every` is how often a visible panel re-reads. `list.default` picks the first filters until a saved view exists. `worktrees.root` is where New worktree puts checkouts; `open_with` is `terminal` or an installed agent's key. `logs.keep_last` caps failed output. `tools.github` is the path to `gh`. Unknown keys and wrong types are reported at the top of the panel and ignored.
+## Update
 
-## Development
+From the `branch-pr` folder, run the installer with `--update`. It keeps your `settings` block.
+
+```sh
+go -C helper run ./install --update
+```
+
+<details>
+<summary>Upgrading from 1.x</summary>
+
+2.0 is a rebuild around working with agents, and it removes some things:
+
+- **GitLab** isn't supported any more. Stay on 1.x if you need it.
+- **The All PRs center tab** is gone: the **Repo** tab in the sidebar replaces it. Close any old All PRs tab, and remove any `props: { "mode": "browser" }` tab or command you set up.
+- **The commands** `open-browser`, `toggle`, `open`, `back`, `checks`, `conversation`, `description`, `worktree`, `preview` and `preview-browser` are gone. `refresh` stays.
+- **Pending reviews, editing comments, quote replies, adding or removing reviewers, and Draft fix & reply** are gone. Agents do this work now; GitHub still has all of them.
+- **Icons moved** to `icons/`, so change a Better Tabs button's `mods/branch-pr/pull-request.svg` to `mods/branch-pr/icons/pull-request.svg`.
+
+Updating keeps your settings and drops `tools.gitlab`.
+
+</details>
+
+## For developers
+
+Command: `branch-pr.refresh` reloads. Commands reach copies that are showing.
+
+Messages the panel sends to agents tell them to treat GitHub's text as data and not to push, post or resolve threads unless asked. A sub-agent is started with `hc run --bg --parent`, and messages to a running agent go through `hc send`. Fix with agent names `gh run view --job N --repo R --log-failed` rather than pasting the log.
+
+New worktree writes `branch.<name>.herdr-pr` to Git config, which the panel reads to find the branch's PR.
+
+### Work on the mod
+
+- `mods/branch-pr/main.js` lists what's where. `settings.js` is shared with the other mods.
+- `github/model.js` says what GitHub's answers mean, `github/` reads, and `actions/` writes and hands off. `state/saved.js` is what survives a reload: filters, the open PR, read comments.
+- `views/` draws with `views/ui.js`, and `icons/` holds the icons.
+- `helper/main.go` is the JSON bridge to `gh`, with validated requests and a 26-second timeout. `helper/install/` is the installer, which builds it to `mods/branch-pr/bin/herdr-pr`.
+- `tests/` uses stand-ins for GitHub, so also look at the running app.
 
 ```sh
 node --test tests/*.test.cjs
 (cd helper && go test ./... && go vet ./...)
 herdr-app check "$HOME/.config/herdr-app/mods/branch-pr"
 ```
-
-`mods/branch-pr/main.js` lists what's where. `github/model.js` says what GitHub's answers mean, `github/` reads, `actions/` writes and hands off, `views/` draws with `views/ui.js`, and `icons/` holds the icons. `helper/main.go` is the JSON bridge to `gh`, with validated requests and a 26-second timeout. Tests use stand-ins for GitHub, so also look at the running app.
 
 See [LICENSE](../LICENSE) and [NOTICE](../NOTICE) for attribution.
