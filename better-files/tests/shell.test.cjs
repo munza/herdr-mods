@@ -4,7 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-
+const { execFileSync } = require('node:child_process');
 const root = path.join(__dirname, '../mods/better-files');
 const load = () =>
   import(`data:text/javascript,${encodeURIComponent(fs.readFileSync(path.join(root, 'files/shell.js'), 'utf8'))}`);
@@ -63,6 +63,39 @@ test('pickListing windows quotes path with embedded single quote', async () => {
   assert.ok(r.args[3].endsWith("'C:\\it''s'"));
 });
 
+test('pickIndex windows uses bounded PowerShell traversal and preserves quoted roots', async () => {
+  const { pickIndex } = await load();
+  const r = pickIndex("C:\\it's", 12, 4000000, 'windows');
+  assert.equal(r.program, 'powershell.exe');
+  assert.ok(r.args[3].includes('$maxDepth=[int]$args[1]'));
+  assert.ok(r.args[3].includes('$maxBytes=[int]$args[2]'));
+  assert.ok(r.args[3].includes("[IO.FileAttributes]::ReparsePoint"));
+  assert.ok(r.args[3].includes("'C:\\it''s'"));
+  assert.ok(r.args[3].includes("'node_modules'"));
+  assert.equal(pickIndex('/tmp', 12, 4000000, 'macos'), null);
+});
+
+test('pickIndex Windows PowerShell finds nested files and prunes excluded folders', { skip: process.platform !== 'win32' }, async () => {
+  const { pickIndex } = await load();
+  const temp = fs.mkdtempSync(path.join(require('node:os').tmpdir(), "filter Box's "));
+  try {
+    for (const dir of ['nested/deeper', 'node_modules', '.git']) fs.mkdirSync(path.join(temp, dir), { recursive: true });
+    for (const file of ['nested/deeper/needle-é.txt', 'node_modules/ignored.txt', '.git/ignored.txt']) fs.writeFileSync(path.join(temp, file), 'fixture');
+    const { program, args } = pickIndex(temp, 10, 4_000_000, 'windows');
+    const result = execFileSync(program, args, { encoding: 'utf8' }).split('\0').filter(Boolean);
+    assert.deepEqual(result, ['nested/deeper/needle-é.txt']);
+    const capped = pickIndex(temp, 10, 1, 'windows');
+    assert.equal(execFileSync(capped.program, capped.args, { encoding: 'utf8' }), '.\0');
+    const exact = pickIndex(temp, 10, Buffer.byteLength('nested/deeper/needle-é.txt\0'), 'windows');
+    assert.equal(execFileSync(exact.program, exact.args, { encoding: 'utf8' }), 'nested/deeper/needle-é.txt\0');
+    const missing = pickIndex(path.join(temp, 'missing'), 10, 1, 'windows');
+    assert.throws(() => execFileSync(missing.program, missing.args, { stdio: 'pipe' }), { status: 1 });
+  } finally {
+    // Remove the fixture even if traversal fails.
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 // --- pickCopyImage ---
 // Contract: src, cache folder, name start, extension, the copy it replaces; prints the copy's name.
 
@@ -91,6 +124,60 @@ test('pickCopyImage windows passes the same five arguments to a PowerShell port'
   assert.ok(script.includes(`{ exit ${BUSY} }`), 'a picture changing mid-copy exits BUSY');
   // the replaced copy is matched by file name, not by a path whose separators may differ
   assert.ok(script.includes('(Split-Path -Leaf $o) -ne $name'));
+});
+
+test('pickFetchImage preserves the POSIX curl path and bounds PowerShell downloads', async () => {
+  const { pickFetchImage } = await load();
+  const url = 'https://img.shields.io/badge/A-blue';
+  const base = '/app/mods/better-files/.cache/web-123';
+  const posix = pickFetchImage(url, base, 'macos');
+  assert.equal(posix.program, 'sh');
+  assert.match(posix.args[1], /curl -fsSL --max-time 20 --max-filesize 5000000/);
+  const win = pickFetchImage(url, 'C:\\app\\.cache\\web-123', 'windows');
+  assert.equal(win.program, 'powershell.exe');
+  assert.deepEqual(win.args.slice(0, 3), ['-NoProfile', '-NoLogo', '-Command']);
+  assert.ok(win.args[3].includes('[Uri]::UnescapeDataString($args[0])'));
+  assert.ok(win.args[3].endsWith(`'${encodeURIComponent(url)}' '${encodeURIComponent('C:\\app\\.cache\\web-123')}'`));
+  assert.ok(!win.args[3].includes(url), 'untrusted URLs are passed as percent-encoded data');
+  assert.ok(win.args[3].includes("http','https"));
+  assert.ok(win.args[3].includes('AddDays(-1)'));
+  assert.ok(win.args[3].includes('--max-time 20 --max-filesize 5000000'));
+  assert.ok(win.args[3].includes("--proto '=http,https' --proto-redir '=http,https'"));
+  assert.ok(!win.args[3].includes('HttpWebRequest'));
+  assert.equal(posix.args[1], `for c in "$2".*; do case "$c" in *.part) continue;; esac; [ -f "$c" ] && [ -n "$(find "$c" -mmin -1440)" ] && { printf %s "$c"; exit 0; }; done
+mkdir -p -- "$(dirname -- "$2")" && t="$2.part" || exit 1
+type=$(curl -fsSL --max-time 20 --max-filesize 5000000 -o "$t" -w '%{content_type}' -- "$1") || exit 1
+case "$type" in *svg*) e=svg;; *png*) e=png;; *jpeg*|*jpg*) e=jpg;; *gif*) e=gif;; *webp*) e=webp;; *) exit 1;; esac
+mv -f -- "$t" "$2.$e" && printf %s "$2.$e"`);
+});
+
+test('Windows fetch script downloads a loopback badge without sh', { skip: process.platform !== 'win32' }, async () => {
+  const { pickFetchImage } = await load();
+  const http = require('node:http');
+  const os = require('node:os');
+  const execFile = require('node:util').promisify(require('node:child_process').execFile);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "better-files ‘badge’'s "));
+  let requests = 0;
+  const server = http.createServer((_req, res) => {
+    requests++;
+    res.writeHead(200, { 'Content-Type': 'image/svg+xml' });
+    res.end('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+  });
+  try {
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const url = `http://127.0.0.1:${server.address().port}/badge/it's-‘quoted’`;
+    const base = `${dir.replaceAll('\\', '/')}/web-test`;
+    const { program, args } = pickFetchImage(url, base, 'windows');
+    const fetch = () => execFile(program, args, { encoding: 'utf8', timeout: 30000 });
+    const { stdout } = await fetch();
+    assert.equal(stdout, `${base}.svg`);
+    assert.equal(fs.readFileSync(stdout, 'utf8'), '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    assert.equal((await fetch()).stdout, stdout);
+    assert.equal(requests, 1);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // --- pickRm ---

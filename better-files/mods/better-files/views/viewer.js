@@ -19,7 +19,7 @@ import {
 } from "../files/model.js";
 import { WHOLE_FILE_LINES, fenceLanguage, highlightLines, languageOf as lexerLanguage, syntaxColors, tokenizeLine } from "../syntax.js";
 import { viewerEntries } from "../actions/open.js";
-import { BUSY, pickCopyImage, pickRm } from "../files/shell.js";
+import { BUSY, pickCopyImage, pickFetchImage, pickRm } from "../files/shell.js";
 import { editorId, foundEditors } from "../actions/outside.js";
 import { fileIcon, isLight } from "../files/file-icons.js";
 import { TEXT, FileIcon, IconButton, Markdown, Message, MenuButton, TextButton, codeFont, codeSize } from "./ui.js";
@@ -35,16 +35,6 @@ const REMOVED_ROW = 8;
 const CACHE = "mods/better-files/.cache";
 const extension = (path) => path.split(".").pop().toLowerCase();
 const absolute = (copy) => (copy ? `${appHome()}/${copy}` : "");
-// $1 a picture's web address, $2 its copy without an extension. A copy under a day old is used
-// as it is; otherwise it's downloaded (5 MB and 20 s at most) and named by the type the server
-// gives, which is how a badge with no extension in its address is known as SVG. A download that
-// fails leaves its `.part`, which the next try writes over. Prints the copy's path. Its name is
-// kept when it's downloaded again, so Herdr may show the old bytes until it restarts: a badge.
-const FETCH_IMAGE = `for c in "$2".*; do case "$c" in *.part) continue;; esac; [ -f "$c" ] && [ -n "$(find "$c" -mmin -1440)" ] && { printf %s "$c"; exit 0; }; done
-mkdir -p -- "$(dirname -- "$2")" && t="$2.part" || exit 1
-type=$(curl -fsSL --max-time 20 --max-filesize 5000000 -o "$t" -w '%{content_type}' -- "$1") || exit 1
-case "$type" in *svg*) e=svg;; *png*) e=png;; *jpeg*|*jpg*) e=jpg;; *gif*) e=gif;; *webp*) e=webp;; *) exit 1;; esac
-mv -f -- "$t" "$2.$e" && printf %s "$2.$e"`;
 const COPIED_MS = 1500;
 
 // A short, stable name for a web address, so the same badge is one file in the cache.
@@ -490,7 +480,8 @@ export const viewerMethods = {
       if (url) {
         const base = absolute(`${CACHE}/${webName(url)}`);
         cx.spawn(async (cx) => {
-          const result = await exec("sh", ["-c", FETCH_IMAGE, "fetch-image", url, base], {}).catch(() => null);
+          const { program, args } = pickFetchImage(url, base, window()?.platform);
+          const result = await exec(program, args, {}).catch(() => null);
           this.markdownCopying.delete(key);
           const copy = result?.code === 0 ? result.stdout.trim() : "";
           if (copy.startsWith(`${appHome()}/`)) this.markdownCopies.set(key, copy.slice(appHome().length + 1));

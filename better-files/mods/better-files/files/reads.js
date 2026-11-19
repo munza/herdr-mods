@@ -1,7 +1,7 @@
 // Reading the folder tree, and Git's view of it, for the focused pane's folder.
 import { spaces, panes, focused, exec, watchFolder, window } from "herdr";
 import { PER_FOLDER, parseStatus, sortEntries } from "./model.js";
-import { pickListing } from "./shell.js";
+import { pickListing, pickIndex } from "./shell.js";
 import { indexOf } from "./filter.js";
 
 const INDEX_BYTES = 4000000;
@@ -32,7 +32,14 @@ async function everyFile(root, on) {
       .filter((path) => !deleted.has(path))
       .join("\0");
   }
-  const depth = SHALLOW_ROOT.test(root.replace(/\/+$/, "") || "/") ? SHALLOW_DEPTH : INDEX_DEPTH;
+  const normalized = root.replace(/[\\/]+$/, "") || "/";
+  const depth = SHALLOW_ROOT.test(normalized) || /^[A-Z]:(?:\\Users\\[^\\]+)?$/i.test(normalized) ? SHALLOW_DEPTH : INDEX_DEPTH;
+  const index = pickIndex(root, depth, INDEX_BYTES, on ? null : window()?.platform);
+  if (index) {
+    const found = await exec(index.program, index.args, { on });
+    if (found.code !== 0) throw new Error(found.stderr || "Cannot list this folder.");
+    return found.stdout;
+  }
   const prune = SKIPPED.map((name) => `-name '${name}'`).join(" -o ");
   const script = `find . -mindepth 1 -maxdepth "$1" \\( ${prune} \\) -prune -o ! -type d -print0 | head -c "$2"`;
   const found = await exec("sh", ["-c", script, "index", String(depth), String(INDEX_BYTES)], { cwd: root, on });
