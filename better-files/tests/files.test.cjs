@@ -123,6 +123,13 @@ function world({ pictures = {}, spaceFolder = '/repo', focusOn = null, storage =
 const ready = async (o) => { const h = world(o); await h.flush(); return h; };
 const find = (node, id) => (node?.elementId === id ? node : node?.nodes?.map((n) => find(n, id)).find(Boolean));
 const strings = (node) => (typeof node === 'string' ? node : (node?.nodes ?? []).map(strings).join(' '));
+const color = (h) => {
+  h.mod.render();
+  h.tick();
+  let steps = 0;
+  for (let at; (at = h.later.findIndex(([ms]) => ms === 16)) >= 0; steps++) h.later.splice(at, 1)[0][1](h.cx);
+  return steps;
+};
 const click = (h, id, event = { click_count: 1 }) => { const node = find(h.mod.render(), id); assert.ok(node, `no ${id}`); assert.ok(node.handlers.click, `${id} isn't clickable`); node.handlers.click(event, h.cx); };
 const tabs = (h) => h.ran.filter(([n]) => n === 'tab.new');
 const viewers = (h) => Object.values(h.store.get('better-files.viewers') ?? {});
@@ -492,10 +499,41 @@ test('the row view colours a file from the top, so a comment carries to the next
   const file = { path: '/repo/x.ts', root: '/repo', on: null };
   const h = await ready({ mode: 'viewer', viewer: 'v', file, texts: { '/repo/x.ts': '/* note\nstill note */ const A = 1' } });
   const colorOf = (node, text) => (node?.nodes?.includes(text) ? node.colors.at(-1) : node?.nodes?.map((n) => colorOf(n, text)).find(Boolean));
+  color(h);
   const row = find(h.mod.render(), 'viewer-line-1');
   assert.ok(row, 'the second row is drawn');
   assert.equal(colorOf(row, 'still note */'), '#dim', 'still a comment');
   assert.equal(colorOf(row, 'const'), '#ansi5');
+});
+
+test('render never colours a whole file: steps on the timer do, and a stale one is dropped', async () => {
+  const file = { path: '/repo/x.ts', root: '/repo', on: null };
+  const text = ['/* open', ...Array.from({ length: 119 }, (_, i) => `still ${i} ${'x'.repeat(60)}`), 'done */ const A = 1'].join('\n');
+  const h = await ready({ mode: 'viewer', viewer: 'v', file, texts: { '/repo/x.ts': text } });
+  const lines = h.mod.fileLines();
+  assert.equal(h.mod.lineRuns(lines), null, 'the first draw has no whole-file runs');
+  const steps = color(h);
+  assert.equal(steps, 2, 'about 8,400 characters take three steps of 4,000, two of them a tick later');
+  const runs = h.mod.lineRuns(lines);
+  assert.equal(runs.length, 121);
+  assert.deepEqual(JSON.parse(JSON.stringify(runs.at(-1).filter((r) => r.kind).map((r) => [r.text, r.kind]))), [['done */', 'comment'], ['const', 'keyword'], ['1', 'number']], 'state carries across steps');
+
+  h.mod.text = `${text}\nmore`;
+  const next = h.mod.fileLines();
+  h.mod.lineRuns(next);
+  h.mod.colorStep(h.cx);
+  h.mod.text = `${text}\nother`;
+  h.mod.lineRuns(h.mod.fileLines());
+  color(h);
+  assert.equal(h.mod.colorJobs.length, 0, 'nothing left queued');
+  assert.equal(h.mod.lineRuns(next), null, 'a version left half-coloured never gets runs');
+});
+
+test("a line longer than a step's budget gets a step to itself", async () => {
+  const file = { path: '/repo/x.ts', root: '/repo', on: null };
+  const h = await ready({ mode: 'viewer', viewer: 'v', file, texts: { '/repo/x.ts': `${'x'.repeat(4500)}\nconst B = 2` } });
+  assert.equal(color(h), 1, 'the long line takes one step, the next line the one after');
+  assert.equal(h.mod.lineRuns(h.mod.fileLines()).length, 2);
 });
 
 test('binary, large and unreadable files say what is going on', async () => {
@@ -1016,6 +1054,8 @@ test('the preview draws code blocks, rows of badges from the web, and jumps to a
   const render = () => h.mod.render();
   const colorOf = (node, s) => (node?.nodes?.includes(s) ? node.colors.at(-1) : node?.nodes?.map((n) => colorOf(n, s)).find(Boolean));
 
+  assert.equal(colorOf(find(render(), 'viewer-code-3'), 'pnpm dev # start'), '#foreground', 'one plain run until its colours are in');
+  color(h);
   const code = find(render(), 'viewer-code-3');
   assert.ok(code, 'the fence is a code block');
   assert.match(strings(code), /sh/, 'its language at the top');
@@ -1559,7 +1599,11 @@ test('the row view recolours when another file has the same text', async () => {
   const file = { path: '/repo/a.py', root: '/repo', on: null };
   const h = await ready({ mode: 'viewer', viewer: 'v', file, texts: { '/repo/a.py': 'def f(): pass' } });
   const lines = ['let x = 1'];
-  const kinds = () => JSON.parse(JSON.stringify(h.mod.lineRuns(lines)[0].filter((r) => r.kind).map((r) => r.kind)));
+  const kinds = () => {
+    h.mod.lineRuns(lines);
+    h.mod.colorStep(h.cx);
+    return JSON.parse(JSON.stringify(h.mod.lineRuns(lines)[0].filter((r) => r.kind).map((r) => r.kind)));
+  };
   assert.deepEqual(kinds(), ['number'], 'let is not a Python keyword');
   h.mod.file = { ...file, path: '/repo/a.js' };
   assert.deepEqual(kinds(), ['keyword', 'number'], 'the same lines, coloured as JavaScript');
