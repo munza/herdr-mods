@@ -16,7 +16,7 @@ Copy this prompt into your Herdr agent:
 
 > Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-files
 
-[RECIPE.md](RECIPE.md) guides the install. Herdr's shipped layouts are read-only, so the sidebar only shows in a layout you own, and the agent never overwrites an unrelated mod with the same name. Requirements: `sh`, and Git for the change marks. Finding editors uses macOS Spotlight. For colour icons, add [Better Icons](../better-icons/README.md) too.
+[RECIPE.md](RECIPE.md) guides the install. Herdr's shipped layouts are read-only, so the sidebar only shows in a layout you own, and the agent never overwrites an unrelated mod with the same name. Requirements: `sh`, and Git for the change marks. Finding editors uses macOS Spotlight, or on Linux the editors' commands on `PATH`. For colour icons, add [Better Icons](../better-icons/README.md) too.
 
 ### Place the sidebar
 
@@ -50,7 +50,7 @@ Files open in the centre pane, beside your agents, instead of squeezing into the
 - **Images:** PNG, JPEG, GIF, WebP, BMP and SVG files show as pictures, fitted to the pane, and update when the file changes. Herdr only loads images from its own folder, so each is shown through a copy in `mods/better-files/.cache/`, removed when its tab closes.
 - **Markdown:** a `.md` or `.markdown` file opens rendered, in Herdr's own Markdown view: headings, lists, tables, quotes, links and the rest, with text you can select. **Preview** and **Code**, beside Open in, switch between that and the file view with its changed lines; each tab remembers its choice, and `markdown` in settings picks the first one. A web link opens in your browser, and a link to another file here opens it in the viewer. Code blocks are drawn by Better Files: the code font at your terminal's size, syntax colours, the language at the top left and a copy button at the top right. A line of pictures shows them: Markdown images (also by reference, and in a list, like a README's badges) and HTML `<img>`, from this computer or the web. Pictures from the web are downloaded with `curl` into the mod's cache and kept for a day, so previewing a README fetches its badges from the internet. A linked picture opens its link, and a table-of-contents link (`#heading`) scrolls to that heading. A picture inside a paragraph, or under a list item, is left to Herdr's view. The preview follows the file as it changes on disk.
 - **Icons:** with [Better Icons](../better-icons/README.md) installed, every file and folder gets its colour icon from VS Code's Material Icon Theme, in the tree and in the tab's title row. Without it, they keep the plain file and folder icons.
-- **Open the whole folder** in your editor or Finder, from the folder icon beside refresh.
+- **Open the whole folder** in your editor or Finder (Explorer on Windows, the file manager on Linux), from the folder icon beside refresh.
 - **One title:** the tab's title row reads like a diff's, with the file, its folder, and Preview while it's the shared tab.
 - **Open in** your code editor, from the tab or the menu. Zed, VS Code, Cursor, Windsurf, Sublime Text and Nova are offered when installed, and you can add more with `editors` in the settings.
 
@@ -62,8 +62,8 @@ Right-click a file or folder for:
 | --- | --- |
 | **Open**, **Open in new tab** | In the shared tab, or a tab of its own. Files only. |
 | **Open in** an editor | Each installed editor. Folders too. |
-| **Open in default app** | Whatever macOS opens that file with. |
-| **Show in Finder** | Reveals it. |
+| **Open in default app** | Whatever your computer opens that file with. |
+| **Show in Finder** | Reveals it. **Show in Explorer** on Windows, **Show in file manager** on Linux. |
 | **Show diff** | Opens a changed file's diff in [Better Changes](../better-changes/README.md), if you have it. |
 | **Copy relative path**, **Copy full path** | For pasting into a prompt. |
 | **Send to** an agent | Asks what it should do, then sends that with the path. Choose an agent that's running, **(spawn)** to start a sub-agent under it, or a new one in its own tab. Only **Send** delivers. |
@@ -78,7 +78,7 @@ Editing, and creating, renaming or deleting files, aren't here on purpose: that'
 
 A folder lists its first 500 entries, and the tree shows 5,000 rows. The filter shows 200 matches and searches up to 40,000 files; outside a Git repository it goes 12 folders deep (5 in a home folder or `/`) and skips `.git`, `node_modules`, `.venv`, `__pycache__`, `target`, `dist` and `.next`. A file view can't report a selection or jump to a line, because Herdr's editor component offers neither, so you send whole files and an editor opens at the top.
 
-Listing a folder needs `sh`. On a Windows computer, its own folders are listed with PowerShell instead, editors are found by their program rather than through Spotlight, and Explorer takes Finder's place; a Windows space on another machine still needs `sh`, and shows an error without it.
+Listing a folder needs `sh`. On a Windows computer, its own folders are listed with PowerShell instead, editors are found by their program rather than through Spotlight, and Explorer takes Finder's place; a Windows space on another machine still needs `sh`, and shows an error without it. On Linux, editors are found by their commands on `PATH` (`zeditor` or `zed`, `code` or `code-oss`, `cursor`, `windsurf`, `subl`; Nova is macOS only), a file opens in its default app with `gio open`, or `xdg-open` without it, and Show in file manager asks the file manager to select it over D-Bus (`dbus-send`), which Nautilus, Dolphin, Nemo and others answer; with none that does, it opens the folder instead.
 
 ## Settings
 
@@ -88,7 +88,7 @@ Listing a folder needs `sh`. On a Windows computer, its own folders are listed w
 | --- | --- | --- |
 | `refresh.tree` | `10s` | How often the tree rereads, on top of watching the folder. Never closer than 1 second. |
 | `refresh.file` | `2s` | How often an open file is checked for changes. Never closer than 500ms. |
-| `editors` | `[]` | More editors for Open in, added to the built-in list, each by macOS app ID, such as `[{ "name": "PhpStorm", "bundle": "com.jetbrains.PhpStorm" }]`. Shown only if installed. |
+| `editors` | `[]` | More editors for Open in, added to the built-in list, each by macOS app ID, such as `[{ "name": "PhpStorm", "bundle": "com.jetbrains.PhpStorm" }]`, or on Linux by its commands, such as `[{ "name": "Kate", "bins": ["kate"] }]`. Shown only if installed. |
 | `gutter` | `true` | Tint changed lines. `false` uses Herdr's own editor instead: selection, folding and a real grammar, but no line colours. Its grammars have no TypeScript or Vue, so those are highlighted as JavaScript and HTML. |
 | `markdown` | `preview` | How a Markdown file first opens, `preview` or `code`. The toggle in a tab overrides it for that tab. |
 
@@ -102,7 +102,7 @@ One class plays three roles, each its own copy: sidebar, viewer and menu, connec
 
 The viewer publishes its title to `shared("pane-heads")`, which [Better Changes](../better-changes/README.md)' pane header shows. Show diff hands over through `better-changes.selection` and `better-changes.diff-tabs`, keyed to the Git root.
 
-Sending to agents: a running agent gets `hc send`; **(spawn)** runs `hc run --bg --parent <agent> --cwd <folder> <program> <message>` directly, so no shell sees the message; a new agent gets `tab.new` with the message as its first prompt. On macOS, editors are found with `mdfind` by app ID and opened with `open -b`; on Windows, one PowerShell run looks in App Paths, `PATH` and the usual install folders. Changed lines come from `git diff -U0 HEAD`.
+Sending to agents: a running agent gets `hc send`; **(spawn)** runs `hc run --bg --parent <agent> --cwd <folder> <program> <message>` directly, so no shell sees the message; a new agent gets `tab.new` with the message as its first prompt. On macOS, editors are found with `mdfind` by app ID and opened with `open -b`; on Windows, one PowerShell run looks in App Paths, `PATH` and the usual install folders; on Linux, one `sh` run looks each editor's commands up on `PATH`, and runs the path it found with the file. Changed lines come from `git diff -U0 HEAD`.
 
 ### Work on the mod
 

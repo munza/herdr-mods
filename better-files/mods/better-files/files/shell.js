@@ -1,11 +1,14 @@
 // Platform seam for every shell-out in this mod.
 // macOS paths are byte-for-byte unchanged from the original; Windows paths use
 // PowerShell 5.1 with the `& { … } '<arg>'` scriptblock wrapper (required on 5.1
-// because bare trailing -Command args are appended to the command text).
+// because bare trailing -Command args are appended to the command text). Linux
+// shares macOS's POSIX listing, copies and cleanup, and has its own opening,
+// revealing and editor lookup, since `open` and Spotlight are macOS's.
 
 export const psQuote = (s) => "'" + String(s).replace(/'/g, "''") + "'";
 
 const isWin = (platform) => platform === "windows";
+const isLinux = (platform) => platform === "linux";
 
 // --- Directory listing ---
 // Wire contract (both platforms): NUL-delimited kind/name pairs, .git skipped,
@@ -115,8 +118,18 @@ export function pickOpenInEditor(editor, path, platform) {
       args: ["-NoProfile", "-NoLogo", "-Command", `& { ${OPEN_IN_EDITOR_PS} } ${psQuote(editor.exe)} ${psQuote(path)}`],
     };
   }
+  if (isLinux(platform)) return { program: editor.exe, args: [path] };
   return { program: "open", args: ["-b", editor.bundle, path] };
 }
+
+// Linux: a file goes to the app the desktop's MIME associations name. `gio open`
+// launches it and returns; xdg-open on a desktop it doesn't know (Hyprland, Sway…)
+// runs the app in the foreground until it closes, past exec's timeout, so it's
+// started in a session of its own instead, and then can't report a failure.
+const OPEN_SH = `[ -e "$1" ] || { echo 'It is no longer there.' >&2; exit 1; }
+if command -v gio >/dev/null 2>&1; then exec gio open "$1"; fi
+command -v xdg-open >/dev/null 2>&1 || { echo 'Neither gio nor xdg-open is installed.' >&2; exit 1; }
+setsid -f xdg-open "$1" >/dev/null 2>&1`;
 
 export function pickOpenWithDefault(path, platform) {
   if (isWin(platform)) {
@@ -125,6 +138,7 @@ export function pickOpenWithDefault(path, platform) {
       args: ["-NoProfile", "-NoLogo", "-Command", `& { Invoke-Item -LiteralPath $args[0] } ${psQuote(path)}`],
     };
   }
+  if (isLinux(platform)) return { program: "sh", args: ["-c", OPEN_SH, "open", path] };
   return { program: "open", args: [path] };
 }
 
@@ -139,15 +153,32 @@ export function pickReveal(path, platform) {
       args: ["-NoProfile", "-NoLogo", "-Command", `& { ${REVEAL_PS} } ${psQuote(path)}`],
     };
   }
+  if (isLinux(platform)) {
+    return { program: "sh", args: ["-c", REVEAL_SH, "reveal", path, fileUri(path), containingFolder(path)] };
+  }
   return { program: "open", args: ["-R", path] };
 }
 
-export const revealLabel = (platform) => (isWin(platform) ? "Show in Explorer" : "Show in Finder");
-export const openFolderLabel = (platform) => (isWin(platform) ? "Open in Explorer" : "Open in Finder");
-export const revealError = (platform) => (isWin(platform) ? "show it in Explorer" : "show it in Finder");
+// Linux: the freedesktop FileManager1 interface selects the item in its folder
+// (Nautilus, Dolphin, Nemo, Caja, Thunar and others answer it). Without a file
+// manager that does, its folder opens instead. $1 the path, $2 its file:// URI,
+// $3 its folder. dbus-send splits an array at commas, so the URI encodes them.
+const REVEAL_SH = `[ -e "$1" ] || { echo 'It is no longer there.' >&2; exit 1; }
+dbus-send --session --print-reply --dest=org.freedesktop.FileManager1 --type=method_call /org/freedesktop/FileManager1 org.freedesktop.FileManager1.ShowItems "array:string:$2" string: >/dev/null 2>&1 && exit 0
+set -- "$3"
+${OPEN_SH}`;
+
+export const fileUri = (path) => "file://" + String(path).split("/").map(encodeURIComponent).join("/");
+const containingFolder = (path) => String(path).replace(/\/+$/, "").replace(/\/[^/]*$/, "") || "/";
+
+const fileManagerName = (platform) => (isWin(platform) ? "Explorer" : isLinux(platform) ? "file manager" : "Finder");
+export const revealLabel = (platform) => `Show in ${fileManagerName(platform)}`;
+export const openFolderLabel = (platform) => `Open in ${fileManagerName(platform)}`;
+export const revealError = (platform) => `show it in ${isLinux(platform) ? "the file manager" : fileManagerName(platform)}`;
 
 // --- Editor detection ---
 // macOS: one mdfind per bundle ID (unchanged).
+// Linux: one sh process looks up each editor's commands on PATH; first hit wins.
 // Windows: one PowerShell process probes App Paths (HKLM→HKCU), PATH, and
 // well-known dirs for every candidate; first hit wins. Emits name\0exePath\0
 // pairs (UTF-8, NUL convention). Always exits 0.
@@ -182,9 +213,27 @@ function detectEditorsPs(allEditors) {
   return { program: "powershell.exe", args: ["-NoProfile", "-NoLogo", "-Command", script] };
 }
 
+// Emits name\0path\0 pairs, like the Windows probe. Arguments are name, then the
+// editor's commands separated by spaces; only an absolute path counts as found, so a
+// shell function or alias of the same name doesn't. Always exits 0.
+const DETECT_EDITORS_SH = `while [ $# -ge 2 ]; do
+  for b in $2; do p=$(command -v "$b" 2>/dev/null) && case $p in /*) printf '%s\\0%s\\0' "$1" "$p"; break;; esac; done
+  shift 2
+done
+exit 0`;
+
+const EDITOR_COMMAND = /^[A-Za-z0-9_][A-Za-z0-9._+-]*$/;
+
 export function pickDetectEditors(baseEditors, extra, platform) {
   if (isWin(platform)) {
     return { kind: "single", ...detectEditorsPs([...baseEditors, ...extra]) };
+  }
+  if (isLinux(platform)) {
+    const pairs = [...baseEditors, ...extra].flatMap((e) => {
+      const bins = (Array.isArray(e?.bins) ? e.bins : []).filter((b) => typeof b === "string" && EDITOR_COMMAND.test(b));
+      return e?.name && bins.length ? [String(e.name), bins.join(" ")] : [];
+    });
+    return { kind: "single", program: "sh", args: ["-c", DETECT_EDITORS_SH, "editors", ...pairs] };
   }
   return {
     kind: "perEditor",
