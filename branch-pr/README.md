@@ -33,7 +33,7 @@ go -C helper run ./install          # first install
 
 The installer builds the helper, copies only `mods/branch-pr/` to `~/.config/herdr-app/mods/branch-pr/`, and runs `herdr-app check`. It doesn't edit layouts or keys.
 
-With Herdr on Windows and this command in WSL, build the helper for Windows: add `--goos windows` (and `--goarch arm64` on an Arm PC) and point `--app-home` at the Windows config folder. The helper is installed as `herdr-pr.exe`, and `herdr-app check` is left for you to run on Windows.
+With Herdr on Windows and this command in WSL, build the helper for Windows: add `--goos windows` and point `--app-home` at the Windows config folder. The helper is installed as `herdr-pr.exe`, and `herdr-app check` is left for you to run on Windows.
 
 </details>
 
