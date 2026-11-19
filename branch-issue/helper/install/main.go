@@ -177,7 +177,23 @@ func copyFile(from, to string) error {
 	return os.WriteFile(to, b, 0o755)
 }
 
-func install(appHome string, update bool) error {
+// target is the system the helper is built for: this one, unless the app that runs it is
+// elsewhere, as when Herdr runs on Windows and this command in WSL.
+type target struct{ goos, goarch string }
+
+var native = target{runtime.GOOS, runtime.GOARCH}
+
+func (t target) cross() bool { return t != native }
+
+// helperName is what the mod calls, with the .exe Windows looks for.
+func (t target) helperName() string {
+	if t.goos == "windows" {
+		return binary + ".exe"
+	}
+	return binary
+}
+
+func install(appHome string, update bool, to target) error {
 	target := filepath.Join(appHome, "mods", mod)
 	shipped, err := readManifest(filepath.Join(root(), "mods", mod))
 	if err != nil {
@@ -195,7 +211,12 @@ func install(appHome string, update bool) error {
 		}
 		installed = found
 	}
-	for _, program := range []string{"go", "herdr-app"} {
+	// herdr-app checks the install where it can run; built for elsewhere, it's run there.
+	tools := []string{"go", "herdr-app"}
+	if to.cross() {
+		tools = tools[:1]
+	}
+	for _, program := range tools {
 		if _, err := lookPath(program); err != nil {
 			return fmt.Errorf("%s is required (Go 1.23+ builds the helper)", program)
 		}
@@ -206,8 +227,9 @@ func install(appHome string, update bool) error {
 		return err
 	}
 	defer os.RemoveAll(build)
-	built := filepath.Join(build, binary)
-	if err := run(filepath.Join(root(), "helper"), nil, "go", "build", "-o", built, "."); err != nil {
+	built := filepath.Join(build, to.helperName())
+	env := []string{"GOOS=" + to.goos, "GOARCH=" + to.goarch}
+	if err := run(filepath.Join(root(), "helper"), env, "go", "build", "-o", built, "."); err != nil {
 		return err
 	}
 	if err := copyTree(filepath.Join(root(), "mods", mod), target); err != nil {
@@ -227,14 +249,16 @@ func install(appHome string, update bool) error {
 		return err
 	}
 	// A new file, not a rewrite: macOS kills a signed binary changed in place.
-	fresh := filepath.Join(bin, "."+binary+".new")
+	fresh := filepath.Join(bin, "."+to.helperName()+".new")
 	if err := copyFile(built, fresh); err != nil {
 		return err
 	}
-	if err := os.Rename(fresh, filepath.Join(bin, binary)); err != nil {
+	if err := os.Rename(fresh, filepath.Join(bin, to.helperName())); err != nil {
 		return err
 	}
-	if err := run("", nil, "herdr-app", "check", target); err != nil {
+	if to.cross() {
+		fmt.Fprintf(out, "Built for %s/%s; run herdr-app check on that machine to check the install.\n", to.goos, to.goarch)
+	} else if err := run("", nil, "herdr-app", "check", target); err != nil {
 		return err
 	}
 	change := ""
@@ -262,8 +286,10 @@ func main() {
 	}
 	appHome := flag.String("app-home", fallback, "Herdr's config folder")
 	update := flag.Bool("update", false, "Update an existing "+title+" installation")
+	goos := flag.String("goos", runtime.GOOS, "System the app that runs the helper is on, such as windows when installing from WSL")
+	goarch := flag.String("goarch", runtime.GOARCH, "Its processor, such as amd64 or arm64")
 	flag.Parse()
-	if err := install(*appHome, *update); err != nil {
+	if err := install(*appHome, *update, target{*goos, *goarch}); err != nil {
 		var exit *exec.ExitError
 		if !errors.As(err, &exit) {
 			fmt.Fprintln(os.Stderr, err)

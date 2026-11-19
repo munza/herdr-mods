@@ -764,6 +764,38 @@ test('a failed delivery keeps what was typed and says why', async () => {
   assert.equal(h.mod.editor.value(), 'Keep me');
 });
 
+test('a box for an agent that has gone closes, and one left from before is not brought back', async () => {
+  const h = await ready({ agents: [AGENT('t1')] });
+  h.store.set('better-files.compose', { at: 1, target: FILE_TARGET, address: 't1' });
+  h.tick();
+  assert.ok(find(h.mod.render(), 'files-composer'));
+  h.live.agents = [];
+  h.tick();
+  assert.equal(h.mod.composer, null);
+  assert.ok(!find(h.mod.render(), 'files-composer'));
+  assert.equal(h.store.get('better-files.compose'), null, 'nothing left for a restart to bring back');
+  assert.equal(h.mod.notice, 'That agent is no longer running.');
+  // As after a restart: the question was kept, its agent wasn't.
+  const later = await ready({ agents: [], sharedInit: { 'better-files.compose': { at: 2, target: FILE_TARGET, address: 't1' } } });
+  later.tick();
+  assert.ok(!later.mod.composer);
+  assert.equal(later.store.get('better-files.compose'), null);
+  // A new agent isn't running yet, and its box stays.
+  const fresh = await ready({ agents: [], known: [CLAUDE], sharedInit: { 'better-files.compose': { at: 3, target: FILE_TARGET, address: 'new:claude' } } });
+  fresh.tick();
+  fresh.tick();
+  assert.ok(fresh.mod.composer);
+});
+
+test('closing the box forgets the question', async () => {
+  const h = await ready({ agents: [AGENT('t1')] });
+  h.store.set('better-files.compose', { at: 1, target: FILE_TARGET, address: 't1' });
+  h.tick();
+  click(h, 'files-prompt-close');
+  assert.equal(h.mod.composer, null);
+  assert.equal(h.store.get('better-files.compose'), null);
+});
+
 test('looking at a file tab leaves the tree where it was', async () => {
   const h = await ready({ cwd: '/repo/src' });
   assert.equal(h.mod.root, '/repo/src');

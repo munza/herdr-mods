@@ -61,10 +61,26 @@ export const agentMethods = {
     setShared(COMPOSE, { at: Date.now(), target, address });
   },
 
+  // Whether a box still has someone to send to. A new agent isn't running yet: it stays,
+  // even while the list of agents that can be started is still being read.
+  composeGone(address) {
+    return !address?.startsWith(NEW_AGENT) && !this.agentAt(address);
+  },
+
+  // The question is kept in shared state, which outlives the app, so an agent that has
+  // gone since is let go of: its box would only offer a Send that can't work.
   syncCompose(cx) {
+    if (this.composer && !this.sending && this.composeGone(this.composer.address)) {
+      this.closeComposer(cx);
+      this.say("That agent is no longer running.", cx);
+    }
     const asked = shared(COMPOSE);
     if (!asked || asked.at === this.composeSeen) return;
     this.composeSeen = asked.at;
+    if (this.composeGone(asked.address)) {
+      setShared(COMPOSE, null);
+      return;
+    }
     this.composer = asked;
     this.editor.set_value("");
     this.editor.focus();
@@ -81,6 +97,7 @@ export const agentMethods = {
 
   closeComposer(cx) {
     this.composer = null;
+    if (shared(COMPOSE)) setShared(COMPOSE, null);
     cx.notify();
   },
 
@@ -110,8 +127,7 @@ export const agentMethods = {
     if (agent.isNew) {
       run("tab.new", { folder: target.root, argv: agent.run, task: message });
       this.say(`Started ${agentName(agent)} in a new tab.`, cx);
-      this.composer = null;
-      cx.notify();
+      this.closeComposer(cx);
       return;
     }
     this.sending = true;
@@ -127,7 +143,7 @@ export const agentMethods = {
             : `Sent to ${agentName(agent)}.`,
           cx,
         );
-        this.composer = null;
+        this.closeComposer(cx);
       } catch (e) {
         this.error = e.message; // The box stays open, so nothing typed is lost.
       } finally {

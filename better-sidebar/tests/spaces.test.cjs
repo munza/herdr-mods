@@ -848,3 +848,15 @@ test("dragging moves a space only in Herdr's order; sorted, a press just selects
   assert.deepEqual(JSON.parse(JSON.stringify(h.commands)), [{ name: "space.select", args: { id: "maps" } }]);
 });
 
+
+test("this computer's + and New space there make the space here, not on the focused space's machine", () => {
+  const h = harness();
+  const cx = { stop_propagation() {} };
+  h.mod.machineAddButton(null, h.colors).handlers.click({}, cx);
+  h.mod.newSpaceRow(null, h.colors, false).handlers.click({}, cx);
+  h.mod.machineAddButton("server", h.colors).handlers.click({}, cx);
+  assert.deepEqual(
+    h.commands.map((c) => JSON.stringify(c.args)),
+    ['{"machine":""}', '{"machine":""}', '{"machine":"server"}'],
+  );
+});

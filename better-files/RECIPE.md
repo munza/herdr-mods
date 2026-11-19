@@ -65,4 +65,4 @@ Herdr's shipped layouts are read-only, so the sidebar only shows in a layout the
 - A README's badges (shields.io, by reference, in a list) and its HTML `<img>` logo show, a badge's link opens on click, and a table-of-contents link scrolls to its heading.
 - A TypeScript or Vue file's rows colour types, calls, tags and attributes, and a block comment or template string stays coloured on the lines after it.
 - A `.env.test` file's comments and values stay plain, with only its keys coloured, and a file over 5,000 lines opens with its own text, coloured row by row.
-- Right-click offers only what applies, and Send to an agent delivers the path.
+- Right-click offers only what applies, and Send to an agent delivers the path. If that agent stops, its box closes and says so, and it does not come back after a restart.

@@ -64,6 +64,7 @@ A `settings` block in the installed `mods/better-sidebar/mod.json` carries the p
 - Cached reads do not cause redraw loops; branch switches/removal discard stale responses.
 - Cmd-clicking a PR number opens its URL without selecting/dragging the row; ordinary clicks still select the space. Draft rows omit their text label but retain their icon, color, and tooltip.
 - Clicking, space menus, same-machine drag reorder, folded machines, and the compact rail still work.
+- With a space on another machine focused, This computer's + and its New space there row make the space on this computer.
 - Switching to a space above or below the fold from the keyboard scrolls the list so its row and its tabs show; clicking a row never scrolls the list.
 - Recent puts the space where something last changed first, Name sorts A to Z, worktrees stay under their main space, and Manual brings back the dragged order.
 - Installation replaces only the spaces block and leaves the person's existing workflow and bindings intact.

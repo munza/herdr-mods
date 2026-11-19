@@ -53,7 +53,7 @@ func TestInstallsAndUpdatesWithoutTouchingAnythingElse(t *testing.T) {
 	write(t, filepath.Join(app, "layouts/personal.json"), `{"personal":true}`)
 	write(t, filepath.Join(app, "keys.json"), `{"global":{"cmd-p":"custom"}}`)
 	write(t, filepath.Join(app, "mods/independent/main.js"), "// personal")
-	if err := install(app, false); err != nil {
+	if err := install(app, false, native); err != nil {
 		t.Fatal(err)
 	}
 	target := filepath.Join(app, "mods", mod)
@@ -66,10 +66,10 @@ func TestInstallsAndUpdatesWithoutTouchingAnythingElse(t *testing.T) {
 	if last := (*calls)[len(*calls)-1]; last[0] != "herdr-app" || last[1] != "check" {
 		t.Fatalf("last ran %v", last)
 	}
-	if err := install(app, false); err == nil {
+	if err := install(app, false, native); err == nil {
 		t.Fatal("a second install needs --update")
 	}
-	if err := install(app, true); err != nil {
+	if err := install(app, true, native); err != nil {
 		t.Fatal(err)
 	}
 	if !regexp.MustCompile(`Installed .* \d+\.\d+\.\d+ \(was \d+\.\d+\.\d+\)`).MatchString(printed.String()) {
@@ -101,7 +101,7 @@ func TestUpdateKeepsEditedSettingsAndReportsStaleKeys(t *testing.T) {
 	edited := map[string]any{"title": title, "version": "0.0.1", "settings": map[string]any{first: "edited", "gone": true}}
 	b, _ := json.Marshal(edited)
 	write(t, filepath.Join(target, "mod.json"), string(b))
-	if err := install(app, true); err != nil {
+	if err := install(app, true, native); err != nil {
 		t.Fatal(err)
 	}
 	got, err := readManifest(target)
@@ -132,7 +132,7 @@ func TestUnrelatedFoldersAndSymlinksAreNeverOverwritten(t *testing.T) {
 	app := t.TempDir()
 	target := filepath.Join(app, "mods", mod)
 	write(t, filepath.Join(target, "mod.json"), `{"title":"Personal"}`)
-	if err := install(app, true); err == nil {
+	if err := install(app, true, native); err == nil {
 		t.Fatal("overwrote someone else's folder")
 	}
 	if got := read(t, filepath.Join(target, "mod.json")); got != `{"title":"Personal"}` {
@@ -144,7 +144,7 @@ func TestUnrelatedFoldersAndSymlinksAreNeverOverwritten(t *testing.T) {
 	if err := os.Symlink(app, target); err != nil {
 		t.Fatal(err)
 	}
-	if err := install(app, true); err == nil {
+	if err := install(app, true, native); err == nil {
 		t.Fatal("overwrote a symlink")
 	}
 }
@@ -153,10 +153,44 @@ func TestMissingToolsFailBeforeCopying(t *testing.T) {
 	fakeTools(t)
 	lookPath = func(string) (string, error) { return "", os.ErrNotExist }
 	app := t.TempDir()
-	if err := install(app, false); err == nil {
+	if err := install(app, false, native); err == nil {
 		t.Fatal("installed without its tools")
 	}
 	if _, err := os.Stat(filepath.Join(app, "mods", mod)); err == nil {
 		t.Fatal("copied before checking")
+	}
+}
+
+func TestBuildsForWindowsFromWSL(t *testing.T) {
+	printed, calls := fakeTools(t)
+	var envs [][]string
+	inner := run
+	run = func(dir string, env []string, args ...string) error {
+		envs = append(envs, env)
+		return inner(dir, env, args...)
+	}
+	// Only Go is needed: the Windows herdr-app can't run here.
+	lookPath = func(program string) (string, error) {
+		if program == "go" {
+			return "available", nil
+		}
+		return "", os.ErrNotExist
+	}
+	app := filepath.Join(t.TempDir(), "app")
+	if err := install(app, false, target{"windows", "amd64"}); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(app, "mods", mod, "bin")
+	if got := read(t, filepath.Join(bin, binary+".exe")); got != "built helper" {
+		t.Fatalf("helper = %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(bin, binary)); err == nil {
+		t.Fatal("left a helper without .exe")
+	}
+	if len(*calls) != 1 || strings.Join(envs[0], " ") != "GOOS=windows GOARCH=amd64" {
+		t.Fatalf("calls = %v, env = %v", *calls, envs)
+	}
+	if !strings.Contains(printed.String(), "run herdr-app check on that machine") {
+		t.Fatalf("printed %q", printed.String())
 	}
 }

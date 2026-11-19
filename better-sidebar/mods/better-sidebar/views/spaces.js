@@ -502,7 +502,7 @@ export class Spaces {
       .text_size(TEXT.small)
       .text_color(t.dim)
       .hover((s) => s.bg(t.hover).text_color(t.foreground))
-      .on_click(() => run("space.new", m ? { machine: m } : {}))
+      .on_click(() => run("space.new", { machine: m ?? "" }))
       .child(Icon("plus", 12))
       .when(!collapsed, (el) => el.child("New space there"));
   }
@@ -562,7 +562,7 @@ export class Spaces {
       .hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_click((_e, cx) => {
         cx.stop_propagation();
-        run("space.new", m ? { machine: m } : {});
+        run("space.new", { machine: m ?? "" });
       })
       .child("+");
   }
