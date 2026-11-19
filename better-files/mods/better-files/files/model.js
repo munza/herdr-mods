@@ -62,6 +62,26 @@ export function resolvePath(folder, link) {
 // backticks or tildes, and what follows, the language.
 const FENCE = /^(\s*)(`{3,}|~{3,})(.*)$/;
 // `[label]: url "title"`, which reference links and images are resolved against.
+// Front matter: `---` on a file's first line (a byte-order mark allowed) up to the next
+// `---` or `...`. Only when empty or opening with a `key:` or a `#` comment, so a file that
+// merely starts with a rule and some prose is left as it is.
+const FRONT_OPEN = /^\uFEFF?---\s*$/;
+const FRONT_CLOSE = /^(---|\.\.\.)\s*$/;
+const FRONT_FIRST = /^\s*(#|["']?[\w.-]+["']?\s*:(\s|$))/;
+export function frontMatter(source) {
+  if (!FRONT_OPEN.test(source[0]?.replace(/\r$/, "") ?? "")) return null;
+  const lines = [];
+  for (let i = 1; i < source.length; i++) {
+    const line = source[i].replace(/\r$/, "");
+    if (FRONT_CLOSE.test(line)) {
+      const first = lines.find((l) => l.trim());
+      return first === undefined || FRONT_FIRST.test(first) ? { end: i, text: lines.join("\n") } : null;
+    }
+    lines.push(line);
+  }
+  return null;
+}
+
 export const REFERENCE = /^ {0,3}\[([^\]]+)\]:\s*<?([^\s>]+)>?(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*$/;
 const HEADING = /^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$/;
 const LIST_ITEM = /^([*+-]|\d{1,9}[.)])\s+/;
@@ -157,9 +177,13 @@ export function imageLine(line, refs, folder) {
 // every piece so its reference links still resolve. Code fences become code blocks the viewer
 // draws itself. A line of pictures becomes an image block: one plain image as `image`, else
 // `images`, consecutive lines in one block, a row each. Pictures inside a paragraph, a quote
-// or under a list item are left to TextView.
+// or under a list item are left to TextView. Front matter comes first as a `yaml` code block,
+// as GitHub shows it apart from the text: TextView would draw its `---` as a rule and the
+// YAML as one long heading.
 export function markdownBlocks(text, folder) {
-  const source = String(text ?? "").split("\n");
+  const all = String(text ?? "").split("\n");
+  const front = frontMatter(all);
+  const source = front ? all.slice(front.end + 1) : all;
   const refs = new Map();
   const definitions = [];
   let fence = null;
@@ -181,7 +205,7 @@ export function markdownBlocks(text, folder) {
   }
   const appendix = definitions.length ? `\n\n${definitions.join("\n")}` : "";
   const seen = new Map();
-  const blocks = [];
+  const blocks = front ? [{ type: "code", lang: "yaml", text: front.text }] : [];
   let lines = [];
   let anchor = null;
   const flush = () => {

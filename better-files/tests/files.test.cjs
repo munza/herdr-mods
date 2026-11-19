@@ -15,7 +15,7 @@ const source = `const { highlightLines, tokenizeLine, syntaxColors, languageOf: 
     .replace(/^import\s+[\s\S]*?;$/gm, '')
     .replace(/^export default (\w+);$/m, 'globalThis.Mod = $1;')
     .replace(/^export /gm, '')
-  + '\nObject.assign(globalThis, { parseStatus, markKey, holdsChange, parseHunks, buildRows, highlightLines, tokenizeLine, lexerLanguage, viewable, languageOf, sortEntries, markdownBlocks, resolvePath, isMarkdown, MAX_CHARS, indexOf, findMatches, matchRows, foldersTo, MAX_INDEXED, MAX_MATCHES, COPY_IMAGE, PER_FOLDER, expandTabs, fileLinesOf });';
+  + '\nObject.assign(globalThis, { parseStatus, markKey, holdsChange, parseHunks, buildRows, highlightLines, tokenizeLine, lexerLanguage, viewable, languageOf, sortEntries, markdownBlocks, frontMatter, resolvePath, isMarkdown, MAX_CHARS, indexOf, findMatches, matchRows, foldersTo, MAX_INDEXED, MAX_MATCHES, COPY_IMAGE, PER_FOLDER, expandTabs, fileLinesOf });';
 
 const TREE = { '/repo': [['d', 'src'], ['f', 'b.md'], ['f', 'a.md']], '/repo/src': [['f', 'main.go']] };
 
@@ -1263,6 +1263,18 @@ test('Markdown splits at headings, gives code its own blocks, and pulls out line
   assert.equal(blocks('# snake_case option')[0].anchor, 'snake_case-option');
   assert.deepEqual(blocks(''), []);
   assert.deepEqual(blocks('\n\n  \n'), []);
+
+  assert.deepEqual(blocks('---\nname: OmaRelay\ncolors:\n  ink: "#fff"\n---\n\n# Design\nText'), [
+    { type: 'code', lang: 'yaml', text: 'name: OmaRelay\ncolors:\n  ink: "#fff"' },
+    { type: 'text', text: '# Design\nText', anchor: 'design' },
+  ], 'front matter is a YAML code block, not a rule and one long heading');
+  assert.deepEqual(blocks('\uFEFF---\r\n# a comment\r\ntitle: x\r\n...\r\nBody'), [
+    { type: 'code', lang: 'yaml', text: '# a comment\ntitle: x' },
+    { type: 'text', text: 'Body' },
+  ], 'after a byte-order mark, with CRLF, closed by ...');
+  assert.deepEqual(blocks('---\n---\nBody'), [{ type: 'code', lang: 'yaml', text: '' }, { type: 'text', text: 'Body' }], 'empty front matter');
+  for (const stays of ['---\nJust prose here.\n---', 'Intro\n---\nkey: v\n---', '---\nkey: v', ' ---\nkey: v\n---'])
+    assert.ok(blocks(stays).every((b) => b.type === 'text'), `not front matter: ${JSON.stringify(stays)}`);
 });
 
 test('malformed Markdown never throws', async () => {
