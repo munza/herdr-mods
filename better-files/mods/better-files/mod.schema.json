@@ -98,6 +98,28 @@
           },
           "default": []
         },
+        "fileManager": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "title": "File manager's name",
+              "description": "What Show in and the folder menu's Open in call the file manager command below. Empty: file manager.",
+              "type": "string",
+              "default": ""
+            },
+            "command": {
+              "title": "File manager command",
+              "description": "A program for Show in and the folder menu's Open in, in place of Finder, Explorer or the desktop's file manager: the program and its first arguments, such as [\"nautilus\", \"--select\"]; the file or folder goes after them. This computer only. Empty: the platform's own.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "default": []
+            }
+          }
+        },
         "gutter": {
           "title": "Changed lines",
           "description": "Tint changed lines. Off uses Herdr's own editor instead: selection, folding and a real grammar, but no line colours, and no TypeScript or Vue grammar.",

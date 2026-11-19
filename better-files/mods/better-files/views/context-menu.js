@@ -2,7 +2,7 @@
 import { div } from "gpui-kit";
 import { v_flex } from "gpui-base";
 import { closeOverlay, props, shared, theme, window } from "herdr";
-import { editorId, foundEditors } from "../actions/outside.js";
+import { editorId, foundEditors, ownFileManager } from "../actions/outside.js";
 import { revealLabel } from "../files/shell.js";
 import { agentName } from "../actions/agents.js";
 import { TEXT } from "./ui.js";
@@ -28,7 +28,7 @@ export const contextMenuMethods = {
         ? [{ id: "default", label: "Open in default app", run: () => this.openWithDefault(target.path) }]
         : []),
       ...(local
-        ? [{ id: "reveal", label: revealLabel(window()?.platform), run: () => this.reveal(target.path) }]
+        ? [{ id: "reveal", label: revealLabel(window()?.platform, ownFileManager()), run: () => this.reveal(target.path) }]
         : []),
     ]);
     if (!target.dir && target.changed && shared("better-files.has-changes"))
