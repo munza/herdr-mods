@@ -26,7 +26,7 @@ The menu closes at once, so it leaves its question in `better-files.compose` for
 
 The message to an agent is the prompt then the path, not the file's text. A running agent gets `hc send`; `(spawn)` runs `hc run --bg --parent <agent> --cwd <folder> <program> <message>` directly, so no shell sees the message; a new agent gets `tab.new` with the message as its first prompt.
 
-Editors are found by macOS app ID with `mdfind`, because a Nix or per-user install isn't in `/Applications`, and opened with `open -b`.
+Editors are found by macOS app ID with `mdfind`, because a Nix or per-user install isn't in `/Applications`, and opened with `open -b`. On Linux, one `sh` run looks up each editor's commands (`bins` in `EDITORS`, first found wins) on `PATH`, keeps only an absolute path, so a shell function of that name doesn't count, and runs that path with the file. Open in default app uses `gio open`, which returns once the app has started; without gio, `xdg-open` runs under `setsid -f`, because on a desktop it doesn't know (Hyprland, Sway…) it stays in the foreground until the app closes, past `exec`'s timeout. Show in file manager calls `org.freedesktop.FileManager1.ShowItems` with `dbus-send`, with every part of the `file://` URI percent-encoded, since dbus-send splits an array at commas, and opens the folder when no file manager answers.
 
 Show diff hands over in the form Better Changes' own list uses: `better-changes.selection` and `better-changes.diff-tabs`, keyed to the Git root, with `tab.new` when no diff tab is open.
 
@@ -65,4 +65,5 @@ Herdr's shipped layouts are read-only, so the sidebar only shows in a layout the
 - A README's badges (shields.io, by reference, in a list) and its HTML `<img>` logo show, a badge's link opens on click, and a table-of-contents link scrolls to its heading.
 - A TypeScript or Vue file's rows colour types, calls, tags and attributes, and a block comment or template string stays coloured on the lines after it.
 - A `.env.test` file's comments and values stay plain, with only its keys coloured, and a file over 5,000 lines opens with its own text, coloured row by row.
+- On Linux, Open in offers the editors on `PATH`, Open in default app opens a file in its app, and Show in file manager selects it in Nautilus or another file manager.
 - Right-click offers only what applies, and Send to an agent delivers the path. If that agent stops, its box closes and says so, and it does not come back after a restart.

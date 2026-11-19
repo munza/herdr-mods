@@ -7,7 +7,7 @@
 //   files/file-icons.js   Better Icons' pictures, when it's installed
 //   files/filter.js       what the filter matches, from a list of every file
 //   actions/open.js       opening tabs, and handing a file to Better Changes
-//   actions/outside.js    code editors, Finder
+//   actions/outside.js    code editors, Finder/Explorer/the file manager
 //   actions/agents.js     sending a file to an agent
 //   actions/menus.js      popup menus
 //   views/tree.js, filter.js, tools.js, viewer.js, context-menu.js   the drawing
