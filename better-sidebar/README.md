@@ -4,6 +4,7 @@ A spaces sidebar for Herdr Desktop that shows each space's Git branch beside its
 
 ![Better Sidebar in Herdr](../docs/gifs/better-sidebar.gif)
 
+
 ## Quick start
 
 1. Install with the prompt below. It takes the place of your spaces list.
@@ -81,6 +82,8 @@ Turn `combined` off in the settings for spaces above agents in the same block, w
 Settings and Add machine sit on one line as icons, with their names in tooltips. Settings shows a dot when an update is ready. With [Better Config](../better-config/README.md) installed, a Mod settings icon after Settings opens it.
 
 ![The footer keeps Settings at the left and Add machine at the right](footer.png)
+
+The full-window demo above predates this footer alignment.
 
 ### Right panel toggle
 
