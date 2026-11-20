@@ -45,6 +45,7 @@ async function harness({ settings = {}, tab = null, panes = [], sharedValues = {
     seq: 1,
   });
   const agents = [agent("t1", "shop", "a", "idle"), agent("t2", "docs", "c", "done"), agent("t3", "shop", "b", "blocked")];
+  live.agents = agents;
   const cx = { notify() {}, stop_propagation() {}, timer: { every() {} }, focus_handle: () => ({}), spawn: (fn) => pending.push(fn(cx)) };
   const context = {
     Date, JSON, Map, Set, Math, console,
@@ -68,6 +69,7 @@ async function harness({ settings = {}, tab = null, panes = [], sharedValues = {
     run() {},
     openOverlay() {},
     hc: async () => ({ code: 0, stdout: '{"machines":[]}' }),
+    checking: () => false,
     watchFolder: async () => { throw Error("No watcher in tests"); },
     exec: async () => ({ code: 1, stdout: "" }),
     appHome: () => "/app",
@@ -127,8 +129,8 @@ test("combined off puts spaces above agents, without tabs", async () => {
 });
 
 test("in Spaces a pinned agent sits above every space", async () => {
-  const { mod } = await harness();
-  mod.agents.setPins(["t3"]);
+  const { mod, live } = await harness();
+  live.agents.find((a) => a.address === "t3").pinned = true;
   const drawn = ids(mod.render()).filter((id) => /^ag-t\d$/.test(id));
   assert.deepEqual(drawn, ["ag-t3", "ag-t1", "ag-t2"]);
   const order = ids(mod.render()).filter((id) => /^(space-(shop|docs)|ag-t\d)$/.test(id));

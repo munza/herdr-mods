@@ -35,9 +35,9 @@ The right panel toggle is its own block, so it needs the layout to hold the tab 
 
 - Git on every machine whose spaces you use.
 - A local installation of [GitHub CLI](https://cli.github.com/), authenticated with `gh auth login`, with access to the repositories you want to show.
-- Herdr's native mod APIs; no Node.js runtime dependency.
+- Herdr 0.1.16 or newer, for its mod APIs; no Node.js runtime dependency.
 
-The mod runs read-only Git commands in space directories and calls `gh pr list` / `gh pr view`, which contact GitHub using your local credentials. **Remote Git reads run on the space's machine; GitHub queries run locally.** It never stages, commits, checks out branches, creates PRs, or changes Git configuration.
+The mod runs read-only Git commands in space directories and calls `gh pr list` / `gh pr view`, which contact GitHub using your local credentials. **Remote Git reads run on the space's machine; GitHub queries run locally.** It never stages, commits, checks out branches, creates PRs, or changes Git configuration. The Git reads only look at refs, so they don't scan the worktree and don't wake the index.
 
 ## Use
 
@@ -48,6 +48,7 @@ Cmd-click a PR number to open it on GitHub.
 - The checkout's PR sits at the **right of the same row**, as an icon and number, coloured **green Open**, **gray Draft**, **purple Merged**, **red Closed**, **red Conflicts**, **red Checks failed**, **yellow Changes requested**, or **green Ready to merge** with a ✓ after the number. The tooltip says which. GitHub works out conflicts and mergeability on its first ask, so a new PR can show Open for up to a minute before its real state. Colors follow the current theme.
 - **Cmd-click the PR number** to open its GitHub URL (Ctrl-click on Linux/Windows). A normal click still selects the space. Hover a PR for its repository, title, and status. If there are several open PRs, the newest is shown with a `+N` summary; hover that summary for the others.
 - Preserves space selection, right-click menus, drag reordering within a machine, the plus that creates a space, colored avatars, ahead/behind counts, machine groups with fold, and the compact rail when the sidebar is narrower than 160px.
+- A machine that was rebuilt or replaced shows **rebuilt ·** with **Connect**, which connects to the core that answers there now. A machine waiting for a password shows the `hc machine login` command to run, with a **Copy** button. A machine whose agents stop when you disconnect shows a **⚠** that opens Herdr's Add machine window.
 - When you switch spaces from the keyboard, the list scrolls that space and its tabs into view, as little as it can. A click in the list never scrolls it.
 - **Sort spaces** from the icon beside the plus: **Manual** is Herdr's own order, the one you drag; **Recent** puts the space where something last changed first; **Name** sorts A to Z. A worktree stays under its main space, which sorts by the latest change in either. Dragging works only in Manual. The choice is remembered.
 
@@ -60,6 +61,8 @@ The agents block is adapted from Herdr's shipped panel and keeps its pins, sub-a
 - **Priority** and **Grouped by space**, as in Herdr.
 - **Grouped by main space** puts a worktree's agents with its main checkout's, under the main space's name. A worktree whose main space is not open groups under the repository's folder name. It needs the spaces block of this mod in the same layout; without it each space is its own group.
 - **Grouped by prefix** gathers names like `PR-12`, `INS-4` and `PLAT-work`, also after a folder as in `feature/INS-4`. It reads the worktree or space name first, then the tab name. Capitals need only the dash, lower case needs a number after it, so `pr-12` counts and `herdr-mods` does not. Everything else goes under **No prefix**, last.
+
+Pinning an agent asks Herdr to keep the pin with the agent's terminal, so the pin shows in every Herdr window and on the phone, and ends with the agent. A sub-agent that has a pane of its own shows once, under its parent.
 
 ### Spaces and agents in one block
 

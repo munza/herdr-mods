@@ -2,7 +2,7 @@
 // each space's tabs and agents under it, and Agents. With `combined: false` in the settings: the
 // two lists one above the other, as two blocks of this mod would draw them.
 import { v_flex, h_flex } from "gpui-base";
-import { agents, focused, theme, setAgentOrder } from "herdr";
+import { focused, theme, setAgentOrder } from "herdr";
 import { Spaces } from "./spaces.js";
 import { Agents } from "./agents.js";
 import { TEXT, Badge, Rail } from "./ui.js";
@@ -58,7 +58,9 @@ export class Lists {
     // their state changes; next-agent keys follow that order.
     const nested = { ...view, sort: { id: "grouped" }, byPriority: false, nested: true };
     const order = [];
-    const all = agents();
+    // The agents as they are listed: a kept sub-agent is under its parent, so
+    // it is not drawn again under its space.
+    const all = view.model;
     // Pinned agents go above every space, in the Agents tab's Pinned group.
     const pinned = view.groups.find((g) => g.id === "pinned");
     const pins = pinned?.members.map((a) => a.address) ?? [];

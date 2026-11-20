@@ -38,7 +38,15 @@ function toggleSidebar() {
   });
 }
 
-const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
+// Drops what an agent puts before its title: a status glyph or spinner and the
+// separator after it ("✦  Working", "⠋ - Thinking"), and Codex's blinking
+// "[ ! ] " / "[ . ] " mark. Stops at an opening bracket or quote, so a title
+// that starts with one ("[web] login") keeps it.
+const clean = (s) =>
+  (s ?? "")
+    .replace(/^[^\p{L}\p{N}\p{Ps}\p{Pi}]+/u, "")
+    .replace(/^\[ [!.] \] /, "")
+    .trim();
 
 function lead(tab, all = panes()) {
   const mine = all.filter((p) => p.tab === tab.id && p.terminal);
@@ -48,13 +56,17 @@ function lead(tab, all = panes()) {
 function title(tab, l) {
   const prog = l?.program?.name;
   const live = clean(l?.title);
+  // clean() would strip a path's leading ~ or /: test the title with only its status glyph gone.
+  const path = /^[~/]|^[A-Za-z]:\\/.test((l?.title ?? "").replace(/^[^\p{L}\p{N}~/]+/u, ""));
   const telling =
     live &&
+    live !== (l?.terminal ?? l?.address) &&
     live !== prog &&
-    !/^[~/]|^[A-Za-z]:\\/.test(live) &&
+    !path &&
     !live.includes("@") &&
     live.toLowerCase() !== l?.program?.key;
-  return tab.name === prog && telling ? live : tab.name;
+  // A tab nobody named takes the agent's own title, as Herdr's tab bar does.
+  return (tab.name === prog || !tab.named) && telling ? live : tab.name;
 }
 const RANK = { blocked: 4, done: 3, working: 2, idle: 1 };
 // A sub-agent without a pane isn't in agents(): its raw word, error counting as
@@ -150,8 +162,21 @@ export class Agents {
     this.sortFocus = cx.focus_handle();
     this.folded = new Set();
     // Each agent's last state and when it changed (ms), kept across restarts.
-    this.changed = JSON.parse(localStorage.getItem("changed") ?? "{}");
-    this.pins = JSON.parse(localStorage.getItem("pins") ?? "[]");
+    try {
+      this.changed = JSON.parse(localStorage.getItem("changed") ?? "{}");
+    } catch {
+      this.changed = {};
+    }
+    if (!this.changed || typeof this.changed !== "object" || Array.isArray(this.changed)) this.changed = {};
+    // Pins kept by this mod before Herdr kept them with the terminal: they are
+    // handed over once, then the core holds them.
+    try {
+      this.pendingPins = JSON.parse(localStorage.getItem("pins") ?? "[]");
+    } catch {
+      this.pendingPins = [];
+    }
+    if (!Array.isArray(this.pendingPins)) this.pendingPins = [];
+    this.migratingPins = new Set();
     this.nameBy = DEFAULT_SETTINGS.agent_name;
     cx.timer.every(30000, (cx) => cx.notify());
     // The spaces view reports problems with the settings; this one only needs the name.
@@ -180,19 +205,24 @@ export class Agents {
     localStorage.setItem("changed", JSON.stringify(this.changed));
   }
 
-  setPins(pins) {
-    this.pins = pins;
-    localStorage.setItem("pins", JSON.stringify(pins));
-  }
-
-  // Drops pins of agents that ended. Only for machines the list has heard from:
-  // right after a start, or while a machine connects, its agents aren't listed yet.
-  prunePins(all) {
-    const machine = (addr) => (addr.includes("/") ? addr.split("/")[0] : "");
-    const heard = new Set(all.map((k) => machine(k.address)));
-    const live = new Set(all.filter((k) => k.state === "live").map((k) => k.address));
-    const kept = this.pins.filter((p) => !heard.has(machine(p)) || live.has(p));
-    if (kept.length !== this.pins.length) this.setPins(kept);
+  // Hands the pins this mod kept over to the core, which keeps them with the
+  // terminal: every Herdr client shows them, and they end with the agent.
+  migratePins(all) {
+    const listed = new Map(all.filter((t) => t.state === "live").map((t) => [t.address, t]));
+    const pending = this.pendingPins.filter((address) => {
+      const terminal = listed.get(address);
+      if (!terminal) return true;
+      if (terminal.labels?.["herdr.pinned"]) return false;
+      if (!this.migratingPins.has(address)) {
+        this.migratingPins.add(address);
+        run("terminal.pin", { terminal: address, pinned: true });
+      }
+      return true;
+    });
+    if (pending.length === this.pendingPins.length) return;
+    this.pendingPins = pending;
+    if (pending.length) localStorage.setItem("pins", JSON.stringify(pending));
+    else localStorage.removeItem("pins");
   }
 
   since(a) {
@@ -405,13 +435,17 @@ export class Agents {
     this.listed = new Map(unordered.map((a) => [a.address, a.status]));
     this.track(unordered, now);
     this.hold(unordered);
-    this.prunePins(all);
+    this.migratePins(all);
+    // A kept sub-agent (one with a pane) is in agents() too: where a tree shows
+    // it, it gets no row of its own, unless it's pinned.
+    const nested = new Set(unordered.flatMap((a) => this.tree(all, a.address).map((s) => s.t.address)));
+    const shown = unordered.filter((a) => a.pinned || !nested.has(a.address));
 
     const byPriority = sort.id === "priority";
-    const urgency = this.urgencies(unordered, all);
-    const ordered = byPriority ? this.byUrgency(unordered, urgency) : unordered;
-    const pinned = this.pins.map((p) => ordered.find((a) => a.address === p)).filter(Boolean);
-    const unpinned = ordered.filter((a) => !this.pins.includes(a.address));
+    const urgency = this.urgencies(shown, all);
+    const ordered = byPriority ? this.byUrgency(shown, urgency) : shown;
+    const pinned = ordered.filter((a) => a.pinned);
+    const unpinned = ordered.filter((a) => !a.pinned);
 
     const label = agentLabel();
     const groupOf = grouping(sort.id, label);
@@ -419,8 +453,9 @@ export class Agents {
     const list = [...pinned, ...rest];
     return {
       sort,
-      count: unordered.length,
+      count: shown.length,
       all,
+      model: shown,
       now,
       byPriority,
       collapsed: narrow(),
@@ -611,7 +646,7 @@ export class Agents {
             .child(duration(view.now - when)),
         ),
       )
-      .child(this.status(t, a, view.byPriority && !this.pins.includes(a.address)));
+      .child(this.status(t, a, view.byPriority && !a.pinned));
   }
 
   // A tab with no agent, under its space in the lists view: its program and its name.
@@ -737,7 +772,7 @@ export class Agents {
   }
 
   pinButton(a, t) {
-    const pinned = this.pins.includes(a.address);
+    const pinned = a.pinned;
     return div()
       .id(`pin-${a.address}`)
       .flex_none()
@@ -749,7 +784,7 @@ export class Agents {
       .tooltip(pinned ? "Unpin" : "Pin to the top")
       .on_click((_e, cx) => {
         cx.stop_propagation();
-        this.setPins(pinned ? this.pins.filter((p) => p !== a.address) : [...this.pins, a.address]);
+        run("terminal.pin", { terminal: a.address, pinned: !pinned });
         // The row moves away from under the pointer, and no hover-out comes.
         this.hovered = null;
         cx.notify();

@@ -6,7 +6,8 @@ const vm = require("node:vm");
 const runtime = path.join(__dirname, "../mods/better-sidebar");
 
 function harness(view) {
-  const live = { agents: [], spaces: [], shared: {}, commands: [], root: null };
+  const live = { agents: [], spaces: [], shared: {}, commands: [], root: null, terminals: [] };
+  const stored = {};
   const overlays = [],
     order = [],
     commands = [];
@@ -42,7 +43,7 @@ function harness(view) {
     h_flex: element,
     Popover: { new: element },
     agents: () => live.agents,
-    terminals: () => [],
+    terminals: () => live.terminals,
     panes: () => [],
     focused: () => null,
     spaces: () => live.spaces,
@@ -63,12 +64,20 @@ function harness(view) {
     layout: () => live.root ?? { id: "sidebar", size: { px: 268 } },
     updates: () => ({ app: { ready: live.updateReady } }),
     nextCommand: () => new Promise((resolve) => live.commands.push(resolve)),
-    localStorage: { getItem: () => null, setItem() {} },
+    localStorage: {
+      getItem: (key) => stored[key] ?? null,
+      setItem: (key, value) => {
+        stored[key] = String(value);
+      },
+      removeItem: (key) => {
+        delete stored[key];
+      },
+    },
     appHome: () => "/app",
     readTextFile: async (file) => live.files?.[file] ?? null,
   };
   vm.createContext(context);
-  return { live, overlays, order, commands, context };
+  return { live, stored, overlays, order, commands, context };
 }
 
 function read(file) {
@@ -203,7 +212,7 @@ test("priority and group by space keep working, and pinned agents stay on top", 
   const { mod, h } = agents("priority");
   assert.equal(rows(mod.render(cx))[0], "sec-4");
   h.live.shared["agents.sort"] = "grouped";
-  mod.setPins(["t5"]);
+  h.live.agents.find((a) => a.address === "t5").pinned = true;
   assert.deepEqual(rows(mod.render(cx)).slice(0, 4), ["pinned", "ag-t5", "sp-shop", "ag-t1"]);
   h.live.shared["agents.sort"] = "prefix";
   assert.deepEqual(rows(mod.render(cx)).slice(0, 2), ["pinned", "ag-t5"]);
@@ -301,4 +310,78 @@ test("agent_name defaults to the tab's name, whatever the terminal's title", () 
   mod.init({}, cx);
   assert.equal(mod.rowName({ tab_name: "Work", title: "Fix login redirect" }, "Work"), "Work");
   assert.equal(mod.rowName({ tab_name: "", title: "Fix login redirect" }, "label"), "label");
+});
+
+test("a title that starts with a bracket keeps it, and Codex's marker goes", () => {
+  const h = harness("agents");
+  const mod = load(h, "views/agents.js", "Agents");
+  mod.init({}, cx);
+  mod.nameBy = "title";
+  assert.equal(mod.rowName({ tab_name: "2", title: "[web] login" }, "2"), "[web] login");
+  assert.equal(mod.rowName({ tab_name: "2", title: "[ ! ] Working" }, "2"), "Working");
+  assert.equal(mod.rowName({ tab_name: "2", title: "✳ Fix login" }, "2"), "Fix login");
+});
+
+test("a kept sub-agent shows once, under its parent", () => {
+  const { h, mod } = agents("grouped");
+  // The sub-agent has a pane, so it is in agents() and under its parent too.
+  h.live.agents.push({
+    address: "t9",
+    space: "shop",
+    space_name: "shop",
+    tab: "a",
+    status: "working",
+    pane: "p-t9",
+    seq: 2,
+  });
+  h.live.terminals = [
+    { address: "t9", parent: "t1", state: "live", name: "helper", program: { name: "Claude Code" } },
+  ];
+  const drawn = rows(mod.render(cx));
+  assert.ok(drawn.includes("sub-t9"), "it is under its parent");
+  assert.ok(!drawn.includes("ag-t9"), "it has no row of its own");
+});
+
+test("the pin button asks the core to pin the agent", () => {
+  const { h, mod } = agents("grouped");
+  const agent = h.live.agents.find((a) => a.address === "t5");
+  find(mod.pinButton(agent, h.context.theme()), "pin-t5").handlers.click({}, cx);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.commands.at(-1))), {
+    name: "terminal.pin",
+    args: { terminal: "t5", pinned: true },
+  });
+  agent.pinned = true;
+  find(mod.pinButton(agent, h.context.theme()), "pin-t5").handlers.click({}, cx);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.commands.at(-1))), {
+    name: "terminal.pin",
+    args: { terminal: "t5", pinned: false },
+  });
+});
+
+test("pins this mod kept are handed to the core, then dropped", () => {
+  const h = harness("agents");
+  h.stored["pins"] = JSON.stringify(["t5"]);
+  h.live.terminals = [{ address: "t5", state: "live", labels: {} }];
+  const mod = load(h, "views/agents.js", "Agents");
+  mod.init({}, cx);
+  mod.render(cx);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.commands.at(-1))), {
+    name: "terminal.pin",
+    args: { terminal: "t5", pinned: true },
+  });
+  assert.equal(h.stored["pins"], '["t5"]', "kept until the core says it is pinned");
+  // The core keeps the pin with the terminal; then this mod's own list is done.
+  h.live.terminals[0].labels["herdr.pinned"] = "1";
+  mod.render(cx);
+  assert.equal(h.stored["pins"], undefined, "the core holds them now");
+});
+
+test("a damaged saved state does not stop the list", () => {
+  const h = harness("agents");
+  h.stored["changed"] = "{not json";
+  h.stored["pins"] = "{not json";
+  const mod = load(h, "views/agents.js", "Agents");
+  mod.init({}, cx);
+  assert.equal(Object.keys(mod.changed).length, 0);
+  assert.equal(mod.pendingPins.length, 0);
 });
