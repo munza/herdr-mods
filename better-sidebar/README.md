@@ -44,13 +44,14 @@ The mod runs read-only Git commands in space directories and calls `gh pr list` 
 Cmd-click a PR number to open it on GitHub.
 
 - The current branch sits **beside the space name**, small and dim, except `main`, `master` and a branch that repeats the name, which go without saying. The selected space also shows how far it is ahead of or behind its remote.
-- Worktree spaces nest beneath an open space for the same repository. Each worktree keeps its own branch and PR status.
+- Worktree spaces nest beneath an open space for the same repository. Each worktree keeps its own branch and PR status. Herdr's own order is kept that way too, so the number keys pick the space the row shows.
 - The checkout's PR sits at the **right of the same row**, as an icon and number, coloured **green Open**, **gray Draft**, **purple Merged**, **red Closed**, **red Conflicts**, **red Checks failed**, **yellow Changes requested**, or **green Ready to merge** with a ✓ after the number. The tooltip says which. GitHub works out conflicts and mergeability on its first ask, so a new PR can show Open for up to a minute before its real state. Colors follow the current theme.
 - **Cmd-click the PR number** to open its GitHub URL (Ctrl-click on Linux/Windows). A normal click still selects the space. Hover a PR for its repository, title, and status. If there are several open PRs, the newest is shown with a `+N` summary; hover that summary for the others.
 - Preserves space selection, right-click menus, drag reordering within a machine, the plus that creates a space, colored avatars, ahead/behind counts, machine groups with fold, and the compact rail when the sidebar is narrower than 160px.
 - A machine that was rebuilt or replaced shows **rebuilt ·** with **Connect**, which connects to the core that answers there now. A machine waiting for a password shows the `hc machine login` command to run, with a **Copy** button. A machine whose agents stop when you disconnect shows a **⚠** that opens Herdr's Add machine window.
 - When you switch spaces from the keyboard, the list scrolls that space and its tabs into view, as little as it can. A click in the list never scrolls it.
 - **Sort spaces** from the icon beside the plus: **Manual** is Herdr's own order, the one you drag; **Recent** puts the space where something last changed first; **Name** sorts A to Z. A worktree stays under its main space, which sorts by the latest change in either. Dragging works only in Manual. The choice is remembered.
+- The number keys follow Herdr's own order, with the worktrees under their main checkout, as Herdr's sidebar does. They do not follow **Recent** or **Name**, where the list shows another order; use the agent keys, which do follow the list.
 
 A space's branch and PR describe its **first terminal's live directory**, falling back to the space's folder—matching Herdr's space naming and worktree grouping. Switching to a different terminal tab does not change that rule.
 

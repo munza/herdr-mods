@@ -105,6 +105,7 @@ export class Spaces {
     }
     if (!this.changed || typeof this.changed !== "object" || Array.isArray(this.changed)) this.changed = {};
     this.frozen = null;
+    this.ordering = null; // the last batch of space moves, and when it was made
     this.machines = [];
     this.folded = new Set();
     try {
@@ -391,9 +392,7 @@ export class Spaces {
       checkoutKey(w, ps) in this.git ||
       Date.now() - (this.born[w.id] ??= Date.now()) > 1500;
     for (const w of sp) if (!this.shown.has(w.id) && ready(w)) this.shown.add(w.id);
-    const list = sp
-      .map((w, i) => ({ w, i, g: this.git[checkoutKey(w, ps)] ?? null }))
-      .filter((r) => this.shown.has(r.w.id));
+    const list = sp.map((w, i) => ({ w, i, g: this.git[checkoutKey(w, ps)] ?? null }));
     const mains = new Set(list.filter((r) => r.g && !r.g.linked).map((r) => r.g.repo));
     const nested = (r) => r.g?.linked && mains.has(r.g.repo);
     const out = [];
@@ -407,8 +406,49 @@ export class Spaces {
       placed.add(r.g.repo);
       kids.forEach((k, n) => out.push({ ...k, tree: n === kids.length - 1 ? "└─" : "├─" }));
     }
+    // Herdr's own order nests the worktrees too, so the model and the list
+    // agree and the number keys pick the space the row shows.
+    this.nest(sp, out);
     this.track(sp, Date.now());
-    return this.sorted(out);
+    return this.sorted(out.filter((r) => this.shown.has(r.w.id)));
+  }
+
+  // Move Herdr's spaces so each worktree sits under its main checkout, as
+  // Herdr's own sidebar does. The batch is simulated, so later indexes include
+  // the earlier moves. A write that lost a race is tried again once the
+  // machines answer.
+  nest(sp, out) {
+    const order = sp.map((w) => w.id);
+    const target = out.map((r) => r.w.id);
+    const key = JSON.stringify([order, target, machines()]);
+    if (order.every((id, i) => id === target[i])) {
+      this.ordering = null;
+      return;
+    }
+    if (this.ordering?.key === key && !this.orderingDue(Date.now())) return;
+    const moved = new Set();
+    this.ordering = { key, at: Date.now(), machines: [] };
+    for (let i = 0; i < out.length; i++) {
+      const from = order.indexOf(out[i].w.id);
+      if (from === i) continue;
+      run("space.move", { id: out[i].w.id, index: i + 1 });
+      moved.add(out[i].w.machine ?? null);
+      order.splice(i, 0, order.splice(from, 1)[0]);
+    }
+    this.ordering.machines = [...moved];
+  }
+
+  // The last batch is tried again when the machines that hold the spaces can
+  // answer, and not before: a write that Herdr dropped must not be repeated
+  // on every redraw.
+  orderingDue(now) {
+    return (
+      this.ordering &&
+      now - this.ordering.at >= 1000 &&
+      this.ordering.machines.every((name) =>
+        machines().some((m) => m.name === name && m.layout === "ready"),
+      )
+    );
   }
 
   // Stamps tabs whose state changed. Done and idle count as one: looking at a space whose

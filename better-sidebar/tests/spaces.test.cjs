@@ -968,6 +968,7 @@ test("a drag moves a space to Herdr's own place, not the row's", () => {
     Array.from(h.mod.ordered(), (r) => r.w.id),
     ["main", "tree"],
   );
+  h.commands.length = 0;
   find(h.mod.body(h.colors, false), "space-main").handlers.mouse_down_left({}, h.cx);
   find(h.mod.body(h.colors, false), "space-tree").handlers.mouse_move({}, h.cx);
   find(h.mod.body(h.colors, false), "space-tree").handlers.mouse_up_left({}, h.cx);
@@ -975,4 +976,65 @@ test("a drag moves a space to Herdr's own place, not the row's", () => {
     name: "space.move",
     args: { id: "main", index: 1 },
   });
+});
+
+// The worktree spaces are moved under their main checkout in Herdr's own
+// order, so the number keys pick the space the row shows.
+function nested(h) {
+  h.live.spaces = [
+    { id: "tree", name: "feature", folder: "/tree", tabs: [] },
+    { id: "main", name: "repo", folder: "/repo", tabs: [] },
+  ];
+  for (const s of h.live.spaces) h.mod.shown.add(s.id);
+  h.mod.git['[null,"/repo"]'] = { repo: '[null,"/repo/.git"]', linked: false, branch: "main" };
+  h.mod.git['[null,"/tree"]'] = { repo: '[null,"/repo/.git"]', linked: true, branch: "feature" };
+  return h;
+}
+
+test("a worktree space is moved under its main checkout in Herdr's order", () => {
+  const h = nested(harness());
+  h.mod.ordered();
+  assert.deepEqual(JSON.parse(JSON.stringify(h.commands)), [
+    { name: "space.move", args: { id: "main", index: 1 } },
+  ]);
+});
+
+test("the moves stop once Herdr's order is the nested one", () => {
+  const h = nested(harness());
+  h.mod.ordered();
+  // Herdr's order is now the nested one.
+  h.live.spaces = [
+    { id: "main", name: "repo", folder: "/repo", tabs: [] },
+    { id: "tree", name: "feature", folder: "/tree", tabs: [] },
+  ];
+  h.commands.length = 0;
+  h.mod.ordered();
+  assert.deepEqual(h.commands, [], "nothing left to move");
+});
+
+test("a move that did not reach Herdr is tried again after a second", () => {
+  const h = nested(harness());
+  h.live.machines = [{ name: null, layout: "ready" }];
+  let now = 1000;
+  vm.runInContext("Date", h.context).now = () => now;
+  h.mod.ordered();
+  assert.equal(h.commands.length, 1);
+  h.mod.ordered();
+  assert.equal(h.commands.length, 1, "not on every redraw");
+  now += 2000;
+  h.mod.ordered();
+  assert.equal(h.commands.length, 2, "tried again once the machine answers");
+});
+
+test("spaces of another machine keep their own block", () => {
+  const h = harness();
+  h.live.spaces = [
+    { id: "remote", name: "remote", folder: "/tree", machine: "server", tabs: [] },
+    { id: "main", name: "repo", folder: "/repo", tabs: [] },
+  ];
+  for (const s of h.live.spaces) h.mod.shown.add(s.id);
+  h.mod.git['[null,"/repo"]'] = { repo: '[null,"/repo/.git"]', linked: false, branch: "main" };
+  h.mod.git['["server","/tree"]'] = { repo: '["server","/repo/.git"]', linked: true, branch: "feature" };
+  h.mod.ordered();
+  assert.deepEqual(h.commands, [], "a worktree of another machine is not moved here");
 });
