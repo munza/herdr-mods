@@ -134,7 +134,7 @@ In `mods/better-sidebar/`:
 - `git/checkouts.js`: reading a space's checkout. `git/pr-status.js`: GitHub discovery, PR appearance, caching, and stale-result handling.
 - `views/spaces.js`, `views/agents.js`, `views/footer.js`, `views/panel-toggle.js`: the parts. `views/ui.js`: the design kit, Herdr's sizes and small components, with only what this mod uses.
 - `icons/`: this mod's icons.
-- `sync.sh`: copies the mod into Herdr, which reloads it. A symlink loads the code but not the icons.
+- `sync.sh`: copies the mod into Herdr, which reloads it. A symlink loads the code but not the icons. It keeps the `settings` block of the installed `mod.json`, so your settings survive a sync.
 - `tests/spaces.test.cjs`, `tests/agents.test.cjs` and `tests/lists.test.cjs`: isolated Herdr/GPUI stand-ins for discovery, polling, races, grouping, rendering, and packaging.
 
 ```sh
