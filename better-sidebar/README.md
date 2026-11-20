@@ -80,6 +80,8 @@ Turn `combined` off in the settings for spaces above agents in the same block, w
 
 Settings and Add machine sit on one line as icons, with their names in tooltips. Settings shows a dot when an update is ready. With [Better Config](../better-config/README.md) installed, a Mod settings icon after Settings opens it.
 
+![The footer keeps Settings at the left and Add machine at the right](footer.png)
+
 ### Right panel toggle
 
 The panel icon at the far right of the tab bar hides or shows the right panel without changing its selected view. It is dim while the panel is hidden. **Cmd+Shift+B** does the same once you merge `keys.json` (see Install).
@@ -109,7 +111,7 @@ The PR badge has no merge or review controls. Selecting its row selects the spac
 
 ## Update
 
-Copy `mods/better-sidebar/` into `~/.config/herdr-app/mods/` again, or ask your agent to. This replaces `mod.json`, so copy your `settings` block forward, or let [Better Config](../better-config/README.md) notice the reset and offer to restore each value.
+To update by hand, copy `mods/better-sidebar/` into `~/.config/herdr-app/mods/`; this replaces `mod.json`, so carry your `settings` block forward, or let [Better Config](../better-config/README.md) restore it. The `sync.sh` script preserves installed settings when it copies the mod.
 
 ## For developers
 
