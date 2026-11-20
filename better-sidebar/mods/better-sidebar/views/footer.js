@@ -61,6 +61,8 @@ export class Footer {
           ]),
         ),
       )
+      // The gap that puts Add machine at the right end of the line.
+      .child(div().flex_1())
       .child(
         this.button("machine", "Add machine", () => run("mod.open", { name: "machine-add" }), t, [
           Icon("plus", 12),

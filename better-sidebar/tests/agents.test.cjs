@@ -264,7 +264,14 @@ test("Mod settings sits after Settings and opens Better Config, when it's instal
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(notified, 1);
   const tree = footer.render();
-  assert.deepEqual(tree.nodes.map((n) => n.id), ["settings", "mod-settings", "machine"]);
+  const ids = tree.nodes.map((n) => n.id).filter((id) => typeof id === "string");
+  assert.deepEqual(ids, ["settings", "mod-settings", "machine"]);
+  assert.equal(tree.nodes.at(-1).id, "machine", "Add machine sits at the right end of the line");
+  assert.notEqual(
+    tree.nodes.at(-2).id,
+    "mod-settings",
+    "a gap between them puts Add machine at the right end",
+  );
   find(tree, "mod-settings").handlers.click({}, cx);
   assert.equal(h.commands[0].name, "mod.open");
   assert.equal(h.commands[0].args.name, "better-config");
