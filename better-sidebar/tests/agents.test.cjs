@@ -6,7 +6,8 @@ const vm = require("node:vm");
 const runtime = path.join(__dirname, "../mods/better-sidebar");
 
 function harness(view) {
-  const live = { agents: [], spaces: [], shared: {}, commands: [], root: null };
+  const live = { agents: [], spaces: [], shared: {}, commands: [], root: null, terminals: [] };
+  const stored = {};
   const overlays = [],
     order = [],
     commands = [];
@@ -42,7 +43,7 @@ function harness(view) {
     h_flex: element,
     Popover: { new: element },
     agents: () => live.agents,
-    terminals: () => [],
+    terminals: () => live.terminals,
     panes: () => [],
     focused: () => null,
     spaces: () => live.spaces,
@@ -63,12 +64,20 @@ function harness(view) {
     layout: () => live.root ?? { id: "sidebar", size: { px: 268 } },
     updates: () => ({ app: { ready: live.updateReady } }),
     nextCommand: () => new Promise((resolve) => live.commands.push(resolve)),
-    localStorage: { getItem: () => null, setItem() {} },
+    localStorage: {
+      getItem: (key) => stored[key] ?? null,
+      setItem: (key, value) => {
+        stored[key] = String(value);
+      },
+      removeItem: (key) => {
+        delete stored[key];
+      },
+    },
     appHome: () => "/app",
     readTextFile: async (file) => live.files?.[file] ?? null,
   };
   vm.createContext(context);
-  return { live, overlays, order, commands, context };
+  return { live, stored, overlays, order, commands, context };
 }
 
 function read(file) {
@@ -203,10 +212,52 @@ test("priority and group by space keep working, and pinned agents stay on top", 
   const { mod, h } = agents("priority");
   assert.equal(rows(mod.render(cx))[0], "sec-4");
   h.live.shared["agents.sort"] = "grouped";
-  mod.setPins(["t5"]);
+  h.live.agents.find((a) => a.address === "t5").pinned = true;
   assert.deepEqual(rows(mod.render(cx)).slice(0, 4), ["pinned", "ag-t5", "sp-shop", "ag-t1"]);
   h.live.shared["agents.sort"] = "prefix";
   assert.deepEqual(rows(mod.render(cx)).slice(0, 2), ["pinned", "ag-t5"]);
+});
+
+test("a done agent ranks as idle as soon as Herdr reports idle", () => {
+  const { mod } = agents("priority");
+  const agent = { address: "done-agent", status: "done" };
+  assert.equal(mod.rank(agent), 3);
+  agent.status = "idle";
+  assert.equal(mod.rank(agent), 1);
+});
+
+test("agents sharing a tab use their own live terminal titles", () => {
+  const { h, mod } = agents("grouped");
+  const first = h.live.agents[0];
+  const second = { ...first, address: "t7", title: "Second task" };
+  first.title = "First task";
+  h.live.agents = [first, second];
+  h.context.panes = () => [
+    { tab: "a", terminal: "t1", title: "First task", focused: true },
+  ];
+  const view = mod.readView();
+  assert.equal(view.label(first), "First task");
+  assert.equal(view.label(second), "Second task");
+});
+
+test("a kept sub-agent focuses its pane, while a parked one peeks", () => {
+  const { h, mod } = agents("grouped");
+  h.live.terminals = [
+    { address: "t1", state: "live", name: "parent" },
+    { address: "kid", parent: "t1", state: "live", name: "child" },
+  ];
+  h.live.agents.push({ address: "kid", status: "working", pane: "p-kid" });
+  mod.listed = new Map([["kid", "working"]]);
+  let row = mod.subRow(h.context.theme(), { t: h.live.terminals[1], lines: [] }, null, false);
+  row.handlers.click();
+  assert.equal(h.commands.at(-1).name, "pane.focus");
+  assert.equal(h.commands.at(-1).args.terminal, "kid");
+  h.live.agents = h.live.agents.filter((a) => a.address !== "kid");
+  mod.render(cx);
+  mod.listed = new Map();
+  row = mod.subRow(h.context.theme(), { t: h.live.terminals[1], lines: [] }, null, false);
+  row.handlers.click();
+  assert.equal(h.commands.at(-1).name, "terminal.peek");
 });
 
 test("without parents published, main space grouping falls back to each space", () => {
@@ -255,7 +306,14 @@ test("Mod settings sits after Settings and opens Better Config, when it's instal
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(notified, 1);
   const tree = footer.render();
-  assert.deepEqual(tree.nodes.map((n) => n.id), ["settings", "mod-settings", "machine"]);
+  const ids = tree.nodes.map((n) => n.id).filter((id) => typeof id === "string");
+  assert.deepEqual(ids, ["settings", "mod-settings", "machine"]);
+  assert.equal(tree.nodes.at(-1).id, "machine", "Add machine sits at the right end of the line");
+  assert.notEqual(
+    tree.nodes.at(-2).id,
+    "mod-settings",
+    "a gap between them puts Add machine at the right end",
+  );
   find(tree, "mod-settings").handlers.click({}, cx);
   assert.equal(h.commands[0].name, "mod.open");
   assert.equal(h.commands[0].args.name, "better-config");
@@ -301,4 +359,78 @@ test("agent_name defaults to the tab's name, whatever the terminal's title", () 
   mod.init({}, cx);
   assert.equal(mod.rowName({ tab_name: "Work", title: "Fix login redirect" }, "Work"), "Work");
   assert.equal(mod.rowName({ tab_name: "", title: "Fix login redirect" }, "label"), "label");
+});
+
+test("a title that starts with a bracket keeps it, and Codex's marker goes", () => {
+  const h = harness("agents");
+  const mod = load(h, "views/agents.js", "Agents");
+  mod.init({}, cx);
+  mod.nameBy = "title";
+  assert.equal(mod.rowName({ tab_name: "2", title: "[web] login" }, "2"), "[web] login");
+  assert.equal(mod.rowName({ tab_name: "2", title: "[ ! ] Working" }, "2"), "Working");
+  assert.equal(mod.rowName({ tab_name: "2", title: "✳ Fix login" }, "2"), "Fix login");
+});
+
+test("a kept sub-agent shows once, under its parent", () => {
+  const { h, mod } = agents("grouped");
+  // The sub-agent has a pane, so it is in agents() and under its parent too.
+  h.live.agents.push({
+    address: "t9",
+    space: "shop",
+    space_name: "shop",
+    tab: "a",
+    status: "working",
+    pane: "p-t9",
+    seq: 2,
+  });
+  h.live.terminals = [
+    { address: "t9", parent: "t1", state: "live", name: "helper", program: { name: "Claude Code" } },
+  ];
+  const drawn = rows(mod.render(cx));
+  assert.ok(drawn.includes("sub-t9"), "it is under its parent");
+  assert.ok(!drawn.includes("ag-t9"), "it has no row of its own");
+});
+
+test("the pin button asks the core to pin the agent", () => {
+  const { h, mod } = agents("grouped");
+  const agent = h.live.agents.find((a) => a.address === "t5");
+  find(mod.pinButton(agent, h.context.theme()), "pin-t5").handlers.click({}, cx);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.commands.at(-1))), {
+    name: "terminal.pin",
+    args: { terminal: "t5", pinned: true },
+  });
+  agent.pinned = true;
+  find(mod.pinButton(agent, h.context.theme()), "pin-t5").handlers.click({}, cx);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.commands.at(-1))), {
+    name: "terminal.pin",
+    args: { terminal: "t5", pinned: false },
+  });
+});
+
+test("pins this mod kept are handed to the core, then dropped", () => {
+  const h = harness("agents");
+  h.stored["pins"] = JSON.stringify(["t5"]);
+  h.live.terminals = [{ address: "t5", state: "live", labels: {} }];
+  const mod = load(h, "views/agents.js", "Agents");
+  mod.init({}, cx);
+  mod.render(cx);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.commands.at(-1))), {
+    name: "terminal.pin",
+    args: { terminal: "t5", pinned: true },
+  });
+  assert.equal(h.stored["pins"], '["t5"]', "kept until the core says it is pinned");
+  // The core keeps the pin with the terminal; then this mod's own list is done.
+  h.live.terminals[0].labels["herdr.pinned"] = "1";
+  mod.render(cx);
+  assert.equal(h.stored["pins"], undefined, "the core holds them now");
+});
+
+test("a damaged saved state does not stop the list", () => {
+  const h = harness("agents");
+  h.stored["changed"] = "{not json";
+  h.stored["pins"] = "{not json";
+  const mod = load(h, "views/agents.js", "Agents");
+  mod.init({}, cx);
+  assert.equal(Object.keys(mod.changed).length, 0);
+  assert.equal(mod.pendingPins.length, 0);
 });

@@ -15,6 +15,7 @@ import {
   watchFolder,
   window,
   layout,
+  checking,
 } from "herdr";
 import { PRStatusObserver, prPlaceKey, prAppearance } from "../git/pr-status.js";
 import { spaceFolder, checkoutKey, readCheckout } from "../git/checkouts.js";
@@ -38,6 +39,9 @@ const rowHeight = ({ tree }) => (tree ? 28 : 30);
 // Watches and terminal events handle most changes. Poll visible repositories
 // occasionally to catch edits and commits made outside Herdr.
 const GIT_FALLBACK_MS = 15000;
+// Places looked at together. All at once, a few hundred spaces run out of the
+// app's open files, or past a machine core's 16 running execs.
+const AT_ONCE = 6;
 // A shown-space change this soon after a press in the list came from that press, so the
 // row under the pointer stays where it is.
 const CLICK_MS = 1000;
@@ -79,7 +83,7 @@ export class Spaces {
     this.busy = {}; // pane -> an agent working or a program in front of its shell
     this.ready = {}; // machine -> its layout was readable at the last look
     this.at = {}; // Space ID -> checkout key at the previous refresh.
-    this.watching = new Set(); // local repos' git folders
+    this.watching = new Map(); // local repos' pending folder watches
     // Spaces made while this runs wait (at most a moment) for their git, so a
     // worktree appears under its repo instead of jumping there.
     this.shown = new Set(spaces().map((s) => s.id));
@@ -99,18 +103,32 @@ export class Spaces {
     } catch {
       this.changed = {};
     }
+    if (!this.changed || typeof this.changed !== "object" || Array.isArray(this.changed)) this.changed = {};
     this.frozen = null;
+    this.ordering = null; // the last batch of space moves, and when it was made
     this.machines = [];
     this.folded = new Set();
     try {
-      this.folded = new Set(JSON.parse(localStorage.getItem("machines.folded") ?? "[]"));
+      const saved = JSON.parse(localStorage.getItem("machines.folded") ?? "[]");
+      this.folded = new Set(Array.isArray(saved) ? saved : []);
     } catch {
       /* Ignore invalid saved UI state. */
     }
+    // Machines being reconnected, kept across restarts.
+    try {
+      this.reconnecting = JSON.parse(localStorage.getItem("machines.reconnecting") ?? "{}");
+      if (!this.reconnecting || typeof this.reconnecting !== "object" || Array.isArray(this.reconnecting))
+        this.reconnecting = {};
+      for (const state of Object.values(this.reconnecting)) state.busy = false;
+    } catch {
+      this.reconnecting = {};
+    }
+    // A check loads the mod once and nothing more: no helpers, no timers, no Git.
+    if (checking()) return;
     this.refreshMachines(cx);
     cx.timer.every(15000, (cx) => this.refreshMachines(cx));
-    // `git status` walks the whole tree, on another machine a process there:
-    // only when its answer could have changed (see `due`).
+    // A Git read runs on another machine a process there: only when its answer
+    // could have changed (see `due`).
     cx.timer.every(250, (cx) => this.checkNew(cx));
   }
 
@@ -155,6 +173,14 @@ export class Spaces {
     const places = Object.create(null);
     for (const space of spaceList) places[space.id] = checkoutKey(space, paneList);
     const used = new Set(Object.values(places).filter((key) => JSON.parse(key)[1]));
+    // Places that are gone: their Git answers go too, so a folder visited
+    // again is read fresh.
+    for (const key of Object.keys(this.git)) {
+      if (used.has(key)) continue;
+      delete this.git[key];
+      delete this.checked[key];
+      this.unsure.delete(key);
+    }
     const due = new Set([...used].filter((key) => !(key in this.git)));
 
     this.addChangedBranches(due, now, spaceList, paneList, places);
@@ -252,19 +278,34 @@ export class Spaces {
       while (this.pending.size) {
         const keys = [...this.pending];
         this.pending.clear();
-        for (const key of keys) await this.check(key, cx);
+        let next = 0;
+        await Promise.all(
+          Array.from({ length: Math.min(AT_ONCE, keys.length) }, async () => {
+            while (next < keys.length) await this.check(keys[next++], cx);
+          }),
+        );
       }
-      const used = new Set(
-        Object.values(this.git)
-          .filter(Boolean)
-          .map((g) => JSON.parse(g.repo))
-          .filter(([on]) => !on)
-          .map(([, repo]) => repo),
-      );
-      for (const repo of this.watching) if (!used.has(repo)) this.watching.delete(repo);
+      this.dropUnused();
       this.refreshing = false;
       cx.notify();
     });
+  }
+
+  // Repos that are gone: their watches go with them, so they don't take up
+  // room among the folders Herdr watches at once.
+  dropUnused() {
+    const used = new Set(
+      Object.values(this.git)
+        .filter(Boolean)
+        .map((g) => JSON.parse(g.repo))
+        .filter(([on]) => !on)
+        .map(([, repo]) => repo),
+    );
+    for (const [repo, pending] of this.watching) {
+      if (used.has(repo)) continue;
+      pending.cancel?.();
+      this.watching.delete(repo);
+    }
   }
 
   // ── Read-only Git metadata and local watches ──────────────────────────────
@@ -284,23 +325,29 @@ export class Spaces {
     }
   }
 
+  // The watch is kept, so it can be stopped when the repo goes away: Herdr
+  // watches at most 64 folders at once, and every caller takes a slot.
   watch(repo, cx) {
     if (this.watching.has(repo)) return;
-    this.watching.add(repo);
+    const pending = watchFolder(repo);
+    this.watching.set(repo, pending);
     cx.spawn(async (cx) => {
+      let current = pending;
       try {
-        while (this.watching.has(repo)) {
-          await watchFolder(repo);
+        for (;;) {
+          await current;
+          if (this.watching.get(repo) !== current) return;
           const mine = JSON.stringify([null, repo]);
-          if (this.watching.has(repo))
-            this.refreshGit(
-              Object.keys(this.git).filter((k) => this.git[k]?.repo === mine),
-              cx,
-            );
+          const keys = Object.keys(this.git).filter((k) => this.git[k]?.repo === mine);
+          if (!keys.length) break;
+          this.refreshGit(keys, cx);
+          current = watchFolder(repo);
+          this.watching.set(repo, current);
         }
       } catch {
-        this.watching.delete(repo);
+        /* The folder can't be watched: the timer fallback carries on. */
       }
+      if (this.watching.get(repo) === current) this.watching.delete(repo);
     });
   }
 
@@ -345,9 +392,7 @@ export class Spaces {
       checkoutKey(w, ps) in this.git ||
       Date.now() - (this.born[w.id] ??= Date.now()) > 1500;
     for (const w of sp) if (!this.shown.has(w.id) && ready(w)) this.shown.add(w.id);
-    const list = sp
-      .map((w, i) => ({ w, i, g: this.git[checkoutKey(w, ps)] ?? null }))
-      .filter((r) => this.shown.has(r.w.id));
+    const list = sp.map((w, i) => ({ w, i, g: this.git[checkoutKey(w, ps)] ?? null }));
     const mains = new Set(list.filter((r) => r.g && !r.g.linked).map((r) => r.g.repo));
     const nested = (r) => r.g?.linked && mains.has(r.g.repo);
     const out = [];
@@ -361,8 +406,49 @@ export class Spaces {
       placed.add(r.g.repo);
       kids.forEach((k, n) => out.push({ ...k, tree: n === kids.length - 1 ? "└─" : "├─" }));
     }
+    // Herdr's own order nests the worktrees too, so the model and the list
+    // agree and the number keys pick the space the row shows.
+    this.nest(sp, out);
     this.track(sp, Date.now());
-    return this.sorted(out);
+    return this.sorted(out.filter((r) => this.shown.has(r.w.id)));
+  }
+
+  // Move Herdr's spaces so each worktree sits under its main checkout, as
+  // Herdr's own sidebar does. The batch is simulated, so later indexes include
+  // the earlier moves. A write that lost a race is tried again once the
+  // machines answer.
+  nest(sp, out) {
+    const order = sp.map((w) => w.id);
+    const target = out.map((r) => r.w.id);
+    const key = JSON.stringify([order, target, machines()]);
+    if (order.every((id, i) => id === target[i])) {
+      this.ordering = null;
+      return;
+    }
+    if (this.ordering?.key === key && !this.orderingDue(Date.now())) return;
+    const moved = new Set();
+    this.ordering = { key, at: Date.now(), machines: [] };
+    for (let i = 0; i < out.length; i++) {
+      const from = order.indexOf(out[i].w.id);
+      if (from === i) continue;
+      run("space.move", { id: out[i].w.id, index: i + 1 });
+      moved.add(out[i].w.machine ?? null);
+      order.splice(i, 0, order.splice(from, 1)[0]);
+    }
+    this.ordering.machines = [...moved];
+  }
+
+  // The last batch is tried again when the machines that hold the spaces can
+  // answer, and not before: a write that Herdr dropped must not be repeated
+  // on every redraw.
+  orderingDue(now) {
+    return (
+      this.ordering &&
+      now - this.ordering.at >= 1000 &&
+      this.ordering.machines.every((name) =>
+        machines().some((m) => m.name === name && m.layout === "ready"),
+      )
+    );
   }
 
   // Stamps tabs whose state changed. Done and idle count as one: looking at a space whose
@@ -449,6 +535,7 @@ export class Spaces {
       ...new Set([
         ...rows.map((r) => r.w.machine).filter(Boolean),
         ...this.machines.map((m) => m.name),
+        ...Object.keys(this.reconnecting),
       ]),
     ].sort();
     if (!remote.length) {
@@ -458,13 +545,15 @@ export class Spaces {
     }
     return [null, ...remote].flatMap((m) => {
       const head = this.machineHeader(m, t, collapsed);
-      if (this.folded.has(m)) return [head];
+      const login = this.loginRow(m, t);
+      const items = login ? [head, login] : [head];
+      if (this.folded.has(m)) return items;
       const mine = rows.filter((r) => (r.w.machine ?? null) === m);
-      if (mine.length) return [head, ...mine.flatMap(draw)];
+      if (mine.length) return [...items, ...mine.flatMap(draw)];
       const placeholder = this.machineLoading(m)
         ? this.loadingRow(m, t, collapsed)
         : this.newSpaceRow(m, t, collapsed);
-      return [head, placeholder];
+      return [...items, placeholder];
     });
   }
 
@@ -505,9 +594,120 @@ export class Spaces {
       .when(!collapsed, (el) => el.child("New space there"));
   }
 
+  // A machine that was rebuilt or replaced: one click connects to the new one.
+  rebuilt(machine) {
+    return (
+      machine?.state === "unreachable" &&
+      /^a different core answers there \("[^"]+"\)$/.test(machine.why ?? "")
+    );
+  }
+
+  // The command that fixes a machine waiting for a password or a host key.
+  loginCommand(m) {
+    const machine = this.machines.find((k) => k.name === m);
+    return machine?.state === "needs_login" ? `hc machine login ${m}` : null;
+  }
+
+  // The row under a machine's header that needs a login, with the command to copy.
+  loginRow(m, t) {
+    const login = this.loginCommand(m);
+    if (!login) return null;
+    return v_flex()
+      .px(8)
+      .pb(6)
+      .gap(3)
+      .flex_none()
+      .child(div().text_size(TEXT.small).text_color(t.blocked).child("needs a login: run"))
+      .child(
+        h_flex()
+          .gap(5)
+          .items_center()
+          .child(div().flex_1().min_w(0).truncate().tooltip(login).text_size(TEXT.small).text_color(t.muted).child(login))
+          .child(
+            div()
+              .id(`machine-login-copy-${m}`)
+              .flex_none()
+              .px(5)
+              .py(2)
+              .rounded(4)
+              .text_size(TEXT.small)
+              .text_color(t.foreground)
+              .bg(t.raised)
+              .cursor_pointer()
+              .hover((s) => s.bg(t.hover))
+              .on_click((_e, cx) => {
+                cx.stop_propagation();
+                cx.write_to_clipboard(login);
+                this.copiedLogin = login;
+                cx.notify();
+              })
+              .child(this.copiedLogin === login ? "Copied" : "Copy"),
+          ),
+      );
+  }
+
+  // Replace the machine's profile with one for the core that answers there now.
+  reconnect(machine, cx) {
+    const name = machine.name;
+    if (this.reconnecting[name]?.busy) return;
+    const state = (this.reconnecting[name] ??= { machine, removed: false });
+    state.busy = true;
+    state.error = null;
+    this.saveReconnecting();
+    cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        const ask = async (args) => {
+          const r = await hc([...args, "--json"]);
+          if (r.code !== 0) {
+            let error;
+            try {
+              error = JSON.parse(r.stdout || r.stderr).error?.message;
+            } catch {
+              /* The core's answer wasn't JSON: its text says what went wrong. */
+            }
+            throw new Error(error || r.stderr || r.stdout || "Couldn't connect.");
+          }
+        };
+        if (!state.removed) {
+          await ask(["machine", "rm", name]);
+          state.removed = true;
+          this.saveReconnecting();
+        }
+        const args = ["machine", "add"];
+        if (machine.via) args.push("--via", machine.target);
+        else args.push(machine.target);
+        args.push("--name", name);
+        if (machine.session) args.push("--session", machine.session);
+        if (machine.temporary) args.push("--temp");
+        await ask(args);
+        this.folded.delete(name);
+        localStorage.setItem("machines.folded", JSON.stringify([...this.folded]));
+        delete this.reconnecting[name];
+      } catch (e) {
+        state.error = String(e.message ?? e);
+        state.busy = false;
+      }
+      this.saveReconnecting();
+      this.refreshMachines(cx);
+      cx.notify();
+    });
+  }
+
+  saveReconnecting() {
+    try {
+      localStorage.setItem("machines.reconnecting", JSON.stringify(this.reconnecting));
+    } catch {
+      /* The state is kept in memory when it can't be saved. */
+    }
+  }
+
   machineHeader(m, t, collapsed) {
     const machine = this.machines.find((k) => k.name === m);
+    const repair = this.reconnecting[m];
     const connected = !m || machine?.state === "connected";
+    const rebuilt = this.rebuilt(machine) || Boolean(repair);
+    const login = this.loginCommand(m);
     const head = h_flex()
       .id(`machine-${m ?? "local"}`)
       .h(26)
@@ -520,6 +720,10 @@ export class Spaces {
       .cursor_pointer()
       .hover((s) => s.bg(t.hover))
       .on_click((_e, cx) => {
+        if (collapsed && login) {
+          run("app.settings", { section: "machines" });
+          return;
+        }
         if (!this.folded.delete(m)) this.folded.add(m);
         localStorage.setItem("machines.folded", JSON.stringify([...this.folded]));
         cx.notify();
@@ -533,11 +737,48 @@ export class Spaces {
           .truncate()
           .child(m ?? "This computer"),
       )
-      .when(!connected, (el) =>
+      .when(!connected && !rebuilt && !login, (el) =>
         el.child(
           div()
             .flex_none()
             .child((machine?.state ?? "asleep").replace(/_/g, " ")),
+        ),
+      )
+      // Rebuilt or replaced: one click connects to the core that answers there now.
+      .when(rebuilt, (el) =>
+        el.child(
+          h_flex()
+            .flex_none()
+            .gap(3)
+            .items_center()
+            .child(div().max_w(140).truncate().child(repair?.error || "rebuilt ·"))
+            .child(
+              div()
+                .id(`machine-connect-${m}`)
+                .text_color(repair?.error ? t.blocked : t.muted)
+                .hover((s) => s.text_color(t.foreground))
+                .tooltip(repair?.error || "This machine was rebuilt or replaced. Click to connect to the new one.")
+                .on_click((_e, cx) => {
+                  cx.stop_propagation();
+                  this.reconnect(machine, cx);
+                })
+                .child(repair?.busy ? "Connecting…" : "Connect"),
+            ),
+        ),
+      )
+      // The core says the machine stops its agents when the connection ends.
+      .when(machine?.keeps_running_after_logout === false, (el) =>
+        el.child(
+          div()
+            .id(`machine-logout-${m}`)
+            .flex_none()
+            .text_color(t.blocked)
+            .tooltip("Agents stop when you disconnect. Click for the fix.")
+            .on_click((_e, cx) => {
+              cx.stop_propagation();
+              openOverlay({ mod: "machine-add", kind: "dialog", width: 560 });
+            })
+            .child("⚠"),
         ),
       )
       .when(connected, (el) => el.child(this.machineAddButton(m, t)))
@@ -715,44 +956,47 @@ export class Spaces {
       .rounded(8)
       .when(lit, (el) => el.bg(t.selected))
       .when(!lit, (el) => el.hover((s) => s.bg(t.hover)))
-      .when(spaceSortOf().id === "manual" && this.pressed === i && this.over !== i, (el) =>
+      .when(spaceSortOf().id === "manual" && this.pressed === w.id && this.over !== w.id, (el) =>
         el.opacity(0.5),
       )
       .on_mouse_down("right", () => this.menu(w))
       .child(this.rowTitle(w, g, tree, t))
       .when(hasPRLine, (el) => el.child(this.prLine(w, t, Boolean(tree))));
-    if (this.pressed !== null && this.over === i && this.pressed !== i)
-      row.child(this.dropLine(i, t));
-    const dragged = this.withDragging(row, w, i);
+    if (this.pressed !== null && this.over === w.id && this.pressed !== w.id)
+      row.child(this.dropLine(w, t));
+    const dragged = this.withDragging(row, w);
     // Nested under the lists view, a worktree hangs from its main space's line.
     if (!(tree && this.under)) return dragged;
     return h_flex().child(Rail(tree.startsWith("└") ? "└" : "├", 14)).child(dragged.flex_1().min_w(0));
   }
 
   // Where the dragged space would land.
-  dropLine(i, t) {
+  dropLine(w, t) {
+    const from = spaces().findIndex((s) => s.id === this.pressed);
+    const to = spaces().findIndex((s) => s.id === w.id);
     return div()
       .absolute()
       .left(0)
       .right(0)
       .h(2)
       .bg(t.accent)
-      .when(this.pressed < i, (line) => line.bottom(0))
-      .when(this.pressed > i, (line) => line.top(0));
+      .when(from < to, (line) => line.bottom(0))
+      .when(from > to, (line) => line.top(0));
   }
 
   // Press to select or start a drag; spaces only move within their machine.
-  withDragging(row, w, i) {
+  // The space's id is kept, not its place: the list may change under the press.
+  withDragging(row, w) {
     return row
       .on_mouse_down("left", () => {
-        this.pressed = i;
-        this.over = i;
+        this.pressed = w.id;
+        this.over = w.id;
       })
       .on_mouse_move((_e, cx) => {
-        const source = spaces()[this.pressed];
+        const source = spaces().find((s) => s.id === this.pressed);
         // Only Herdr's own order can be dragged; a sorted list would put it back.
         const manual = spaceSortOf().id === "manual";
-        const over = manual && source && (source.machine ?? null) === (w.machine ?? null) ? i : null;
+        const over = manual && source && (source.machine ?? null) === (w.machine ?? null) ? w.id : null;
         if (this.pressed !== null && this.over !== over) {
           this.over = over;
           cx.notify();
@@ -763,9 +1007,12 @@ export class Spaces {
         const over = this.over;
         this.pressed = null;
         this.over = null;
-        if (from !== null && over === i && from !== i)
-          run("space.move", { id: spaces()[from].id, index: i + 1 });
-        else if (from === i) run("space.select", { id: w.id });
+        if (from !== null && over === w.id && from !== w.id) {
+          // Herdr's own place of the target, not the row's: a worktree hangs
+          // under its main space in the list, but keeps its own place in Herdr.
+          const index = spaces().findIndex((s) => s.id === w.id);
+          if (index !== -1) run("space.move", { id: from, index: index + 1 });
+        } else if (from === w.id) run("space.select", { id: w.id });
         cx.notify();
       });
   }
@@ -777,7 +1024,7 @@ export class Spaces {
       .when(Boolean(tree), (el) => el.when(!this.under, (e) => e.pl(22)).child(Icon("branch", 13).text_color(t.dim)))
       .when(!tree, (el) => el.child(this.avatar(w, t)))
       .child(
-        div().min_w(0).max_w(150).truncate().tooltip(w.name).text_color(t.foreground).child(w.name),
+        div().flex_initial().min_w(48).truncate().tooltip(w.name).text_color(t.foreground).child(w.name),
       )
       .child(this.branchName(g, w.name, t))
       .child(this.gitTail(g, w.active, t, w));

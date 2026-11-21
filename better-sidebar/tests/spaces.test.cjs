@@ -7,14 +7,16 @@ const runtime = path.join(__dirname, "../mods/better-sidebar");
 
 // Inspect fluent GPUI descriptions without opening a window. Timers do not run
 // automatically; flush() waits for spawned reads, making races deterministic.
-function harness(stored = {}) {
-  const live = { spaces: [], panes: [], machines: [] };
+function harness(stored = {}, options = {}) {
+  const live = { spaces: [], panes: [], machines: [], checking: options.checking ?? false };
   const pending = [],
     scrolled = [],
     calls = [],
     commands = [],
     overlays = [],
+    timers = [],
     values = {};
+  let hcCalls = 0;
   const colors = {
     foreground: "white",
     dim: "gray",
@@ -61,7 +63,11 @@ function harness(stored = {}) {
     notify() {},
     stop_propagation() {},
     focus_handle: () => ({ focus() {} }),
-    timer: { every() {} },
+    timer: {
+      every(ms, fn) {
+        timers.push({ ms, fn });
+      },
+    },
     spawn(fn) {
       pending.push(fn(cx));
     },
@@ -97,7 +103,11 @@ function harness(stored = {}) {
         stored[key] = String(value);
       },
     },
-    hc: async () => ({ code: 0, stdout: '{"machines":[]}' }),
+    hc: async (...args) => {
+      hcCalls++;
+      return options.hc ? options.hc(...args) : { code: 0, stdout: '{"machines":[]}' };
+    },
+    checking: () => live.checking,
     watchFolder: async () => {
       throw Error("No watcher in tests");
     },
@@ -132,12 +142,16 @@ function harness(stored = {}) {
     calls,
     commands,
     overlays,
+    timers,
     values,
     colors,
     context,
     cx,
     mod,
     observer: mod.prObserver,
+    get hcCalls() {
+      return hcCalls;
+    },
     flush: async () => {
       while (pending.length) await Promise.all(pending.splice(0));
     },
@@ -476,9 +490,11 @@ test("Git metadata reads preserve remote context and parse ahead/behind", async 
   const h = harness();
   h.context.exec = async (cmd, args, options) => {
     h.calls.push({ cmd, args, options });
-    if (args.includes("status")) return result("# branch.head feature\n# branch.ab +2 -1\n");
     if (args.includes("--show-toplevel")) return result("/tree\n");
-    return result("/repo/.git\n");
+    if (args.includes("--git-common-dir")) return result("/repo/.git\n");
+    if (args.includes("symbolic-ref")) return result("refs/heads/feature\n");
+    if (args.includes("rev-list")) return result("2\t1\n");
+    return result("");
   };
   await h.mod.check('["remote","/tree"]', h.cx);
   const g = h.mod.git['["remote","/tree"]'];
@@ -487,6 +503,14 @@ test("Git metadata reads preserve remote context and parse ahead/behind", async 
   assert.equal(g.behind, 1);
   assert.equal(g.linked, true);
   assert.ok(h.calls.every((call) => call.options.on === "remote" && call.options.cwd === "/tree"));
+  assert.ok(
+    h.calls.every((call) => call.options.timeout > 0),
+    "every Git read has a timeout",
+  );
+  assert.ok(
+    !h.calls.some((call) => call.args.includes("status")),
+    "no worktree scan: the reads are ref-only",
+  );
 });
 
 test("real Git metadata groups a worktree beneath its main checkout", async () => {
@@ -516,7 +540,15 @@ test("real Git metadata groups a worktree beneath its main checkout", async () =
     ]);
     git(["worktree", "add", "-q", "-b", "feature", tree]);
     const h = harness();
-    h.context.exec = async (_cmd, args, options) => result(git(args, options.cwd));
+    // exec reports a failing command, it does not throw: a branch with no
+    // upstream has no ahead/behind to report.
+    h.context.exec = async (_cmd, args, options) => {
+      try {
+        return result(git(args, options.cwd));
+      } catch (e) {
+        return { code: e.status ?? 1, stdout: "", stderr: String(e.stderr ?? e.message) };
+      }
+    };
     h.live.spaces = [
       { id: "tree", name: "feature", folder: tree, tabs: [] },
       { id: "main", name: "main", folder: main, tabs: [] },
@@ -860,4 +892,149 @@ test("this computer's + and New space there make the space here, not on the focu
     h.commands.map((c) => JSON.stringify(c.args)),
     ['{"machine":""}', '{"machine":""}', '{"machine":"server"}'],
   );
+});
+
+test("a check loads the mod without helpers, timers or Git", () => {
+  const check = harness({}, { checking: true });
+  assert.equal(check.hcCalls, 0, "no machine list during a check");
+  assert.equal(check.timers.length, 0, "no timers during a check");
+  const live = harness();
+  assert.equal(live.hcCalls, 1, "a live window asks for the machines");
+  assert.equal(live.timers.length, 2, "and keeps two timers");
+});
+
+test("a repo that is gone stops its watch", () => {
+  const h = harness();
+  let cancelled = 0;
+  h.context.watchFolder = () => {
+    const pending = new Promise(() => {});
+    pending.cancel = () => {
+      cancelled++;
+    };
+    return pending;
+  };
+  h.mod.watch("/repo/.git", h.cx);
+  assert.equal(h.mod.watching.size, 1);
+  h.mod.git = { '[null,"/repo"]': { repo: '[null,"/repo/.git"]' } };
+  h.mod.dropUnused();
+  assert.equal(cancelled, 0, "the repo is still in use");
+  h.mod.git = {};
+  h.mod.dropUnused();
+  assert.equal(cancelled, 1, "the watch is stopped");
+  assert.equal(h.mod.watching.size, 0);
+});
+
+test("a machine that needs a login shows the command that fixes it", () => {
+  const h = harness();
+  h.mod.machines = [{ name: "server", state: "needs_login" }];
+  const row = h.mod.loginRow("server", h.colors);
+  assert.match(text(row), /hc machine login server/);
+  assert.ok(find(row, "machine-login-copy-server"));
+  h.mod.machines = [{ name: "server", state: "connected" }];
+  assert.equal(h.mod.loginRow("server", h.colors), null, "a connected machine needs no login");
+});
+
+test("a machine that was rebuilt offers to connect to the new one", () => {
+  const h = harness();
+  h.mod.machines = [
+    { name: "server", state: "unreachable", why: 'a different core answers there ("vps")' },
+  ];
+  assert.ok(h.mod.rebuilt(h.mod.machines[0]));
+  assert.ok(find(h.mod.machineHeader("server", h.colors, false), "machine-connect-server"));
+  h.mod.machines = [{ name: "server", state: "unreachable", why: "the host is asleep" }];
+  assert.equal(h.mod.rebuilt(h.mod.machines[0]), false, "another reason is not a rebuild");
+});
+
+test("the header warns when the machine stops its agents at logout", () => {
+  const h = harness();
+  h.mod.machines = [{ name: "server", state: "connected", keeps_running_after_logout: false }];
+  assert.ok(find(h.mod.machineHeader("server", h.colors, false), "machine-logout-server"));
+  h.mod.machines = [{ name: "server", state: "connected", keeps_running_after_logout: true }];
+  assert.equal(find(h.mod.machineHeader("server", h.colors, false), "machine-logout-server"), undefined);
+});
+
+test("a drag moves a space to Herdr's own place, not the row's", () => {
+  const h = harness();
+  h.live.spaces = [
+    { id: "tree", name: "feature", folder: "/tree", tabs: [] },
+    { id: "main", name: "repo", folder: "/repo", tabs: [] },
+  ];
+  for (const s of h.live.spaces) h.mod.shown.add(s.id);
+  h.mod.git['[null,"/repo"]'] = { repo: '[null,"/repo/.git"]', linked: false, branch: "main" };
+  h.mod.git['[null,"/tree"]'] = { repo: '[null,"/repo/.git"]', linked: true, branch: "feature" };
+  // The worktree hangs under its main space in the list, but keeps its own
+  // place in Herdr's order.
+  assert.deepEqual(
+    Array.from(h.mod.ordered(), (r) => r.w.id),
+    ["main", "tree"],
+  );
+  h.commands.length = 0;
+  find(h.mod.body(h.colors, false), "space-main").handlers.mouse_down_left({}, h.cx);
+  find(h.mod.body(h.colors, false), "space-tree").handlers.mouse_move({}, h.cx);
+  find(h.mod.body(h.colors, false), "space-tree").handlers.mouse_up_left({}, h.cx);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.commands.at(-1))), {
+    name: "space.move",
+    args: { id: "main", index: 1 },
+  });
+});
+
+// The worktree spaces are moved under their main checkout in Herdr's own
+// order, so the number keys pick the space the row shows.
+function nested(h) {
+  h.live.spaces = [
+    { id: "tree", name: "feature", folder: "/tree", tabs: [] },
+    { id: "main", name: "repo", folder: "/repo", tabs: [] },
+  ];
+  for (const s of h.live.spaces) h.mod.shown.add(s.id);
+  h.mod.git['[null,"/repo"]'] = { repo: '[null,"/repo/.git"]', linked: false, branch: "main" };
+  h.mod.git['[null,"/tree"]'] = { repo: '[null,"/repo/.git"]', linked: true, branch: "feature" };
+  return h;
+}
+
+test("a worktree space is moved under its main checkout in Herdr's order", () => {
+  const h = nested(harness());
+  h.mod.ordered();
+  assert.deepEqual(JSON.parse(JSON.stringify(h.commands)), [
+    { name: "space.move", args: { id: "main", index: 1 } },
+  ]);
+});
+
+test("the moves stop once Herdr's order is the nested one", () => {
+  const h = nested(harness());
+  h.mod.ordered();
+  // Herdr's order is now the nested one.
+  h.live.spaces = [
+    { id: "main", name: "repo", folder: "/repo", tabs: [] },
+    { id: "tree", name: "feature", folder: "/tree", tabs: [] },
+  ];
+  h.commands.length = 0;
+  h.mod.ordered();
+  assert.deepEqual(h.commands, [], "nothing left to move");
+});
+
+test("a move that did not reach Herdr is tried again after a second", () => {
+  const h = nested(harness());
+  h.live.machines = [{ name: null, layout: "ready" }];
+  let now = 1000;
+  vm.runInContext("Date", h.context).now = () => now;
+  h.mod.ordered();
+  assert.equal(h.commands.length, 1);
+  h.mod.ordered();
+  assert.equal(h.commands.length, 1, "not on every redraw");
+  now += 2000;
+  h.mod.ordered();
+  assert.equal(h.commands.length, 2, "tried again once the machine answers");
+});
+
+test("spaces of another machine keep their own block", () => {
+  const h = harness();
+  h.live.spaces = [
+    { id: "remote", name: "remote", folder: "/tree", machine: "server", tabs: [] },
+    { id: "main", name: "repo", folder: "/repo", tabs: [] },
+  ];
+  for (const s of h.live.spaces) h.mod.shown.add(s.id);
+  h.mod.git['[null,"/repo"]'] = { repo: '[null,"/repo/.git"]', linked: false, branch: "main" };
+  h.mod.git['["server","/tree"]'] = { repo: '["server","/repo/.git"]', linked: true, branch: "feature" };
+  h.mod.ordered();
+  assert.deepEqual(h.commands, [], "a worktree of another machine is not moved here");
 });
