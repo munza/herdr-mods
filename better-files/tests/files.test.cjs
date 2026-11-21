@@ -15,18 +15,18 @@ const source = `const { highlightLines, tokenizeLine, syntaxColors, languageOf: 
     .replace(/^import\s+[\s\S]*?;$/gm, '')
     .replace(/^export default (\w+);$/m, 'globalThis.Mod = $1;')
     .replace(/^export /gm, '')
-  + '\nObject.assign(globalThis, { parseStatus, markKey, holdsChange, parseHunks, buildRows, highlightLines, tokenizeLine, lexerLanguage, viewable, languageOf, sortEntries, markdownBlocks, resolvePath, isMarkdown, MAX_CHARS, indexOf, findMatches, matchRows, foldersTo, MAX_INDEXED, MAX_MATCHES, COPY_IMAGE });';
+  + '\nObject.assign(globalThis, { parseStatus, markKey, holdsChange, parseHunks, buildRows, highlightLines, tokenizeLine, lexerLanguage, viewable, languageOf, sortEntries, markdownBlocks, resolvePath, isMarkdown, MAX_CHARS, indexOf, findMatches, matchRows, foldersTo, MAX_INDEXED, MAX_MATCHES, COPY_IMAGE, PER_FOLDER, expandTabs, fileLinesOf });';
 
 const TREE = { '/repo': [['d', 'src'], ['f', 'b.md'], ['f', 'a.md']], '/repo/src': [['f', 'main.go']] };
 
 // Every file under /repo, as git ls-files -z would list it.
 const EVERY = 'a.md\0b.md\0new.txt\0src/main.go\0';
 
-function world({ pictures = {}, spaceFolder = '/repo', focusOn = null, storage = {}, everything = EVERY, deleted = '', found = '', copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
+function world({ pictures = {}, spaceFolder = '/repo', focusOn = null, storage = {}, everything = EVERY, deleted = '', found = '', copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult, execOverride, platform = 'macos', watchOverride, readOverride, checking = false } = {}) {
   const store = new Map(Object.entries(sharedInit));
   const ran = [], execs = [], sent = [], clipboard = [], closed = [], overlays = [], urls = [], scrolled = [];
   const live = { pictures: { ...pictures }, layout, panes: [{ pane: 'p1', tab: 'tab1', cwd, terminal: 'term1' }, ...(focusOn ? [focusOn] : [])], focused: focusOn ? { space: 's', tab: focusOn.tab, pane: focusOn.pane, cwd: null } : { space: 's', tab: 'tab1', pane: 'p1', cwd, terminal: 'term1' }, agents, texts: { ...texts } };
-  const timers = [], later = [];
+  const timers = [], later = [], watchCalls = [];
   const kept = new Map(Object.entries(storage));
   const waiting = [];
   // What holds the keyboard: a focus handle or an input's state.
@@ -56,6 +56,7 @@ function world({ pictures = {}, spaceFolder = '/repo', focusOn = null, storage =
         if (k === 'when') return (b, f) => { if (b) f(proxy); return proxy; };
         return (...a) => {
           if (k === 'id') t.elementId = a[0];
+          if (k === 'drag_paths') t.dragPaths = a;
           if (k === 'text_color') t.colors.push(a[0]);
           if (k === 'border_color') t.border = a[0];
           if (k === 'on_click') t.handlers.click = a[0];
@@ -76,8 +77,9 @@ function world({ pictures = {}, spaceFolder = '/repo', focusOn = null, storage =
     Popover: { new: (id) => el().id(id) }, Textarea: { new: () => el() }, TextareaState: { new: state }, Input: { new: () => el() }, InputState: { new: state }, ScrollHandle: { new: () => ({ scroll_to_item: (i) => scrolled.push(i) }) },
     Scrollbar: { vertical: () => el() }, TextView: { markdown: (id, text) => el().id(id).child(`md:${text}`) }, v_virtual_list: (_id, count, sizes, key, render) => { const e = el().id('viewer-list'); if (Array.isArray(sizes) && sizes.length !== count) throw new Error('sizes'); for (let i = 0; i < count; i++) key(i); e.children(render({ start: 0, end: Math.min(count, 60) })); return e; }, Editor: { new: (s) => el().child(s.text) }, EditorState: { new: (o) => { const s = state(o); context.lastCode = s; return s; } },
     theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
-    settings: () => ({ font_family: 'Code', font_size: 14 }), window: () => ({ platform: 'macos' }),
+    settings: () => ({ font_family: 'Code', font_size: 14 }), window: () => ({ platform }),
     props: () => ({ mode, viewer, file, target, space: 's', overlay: 'ov1' }),
+    checking: () => checking,
     // Space `s` is the active one; a pane with `space` set puts its tab in that space instead.
     // A focused file tab (`focusOn`) is its space's shown tab.
     spaces: () => {
@@ -92,12 +94,16 @@ function world({ pictures = {}, spaceFolder = '/repo', focusOn = null, storage =
       if (name === 'tab.new' && args.mod) live.panes.push({ pane: `p${live.panes.length + 1}`, tab: `tab${live.panes.length + 1}`, mod: args.mod });
     },
     openOverlay: (spec) => { overlays.push(JSON.parse(JSON.stringify(spec))); return 'ov1'; }, closeOverlay: (id) => closed.push(id),
-    layout: () => live.layout, appHome: () => '/app', nextCommand: () => new Promise((resolve) => waiting.push(resolve)), watchFolder: () => new Promise(() => {}),
-    readTextFile: async (p) => { if (p.endsWith('better-changes/mod.json')) return '{}'; if (p.endsWith('better-files/mod.json')) return null; if (live.texts[p] instanceof Error) throw live.texts[p]; return live.texts[p] ?? null; },
+    layout: () => live.layout, appHome: () => '/app', nextCommand: () => new Promise((resolve) => waiting.push(resolve)), watchFolder: (...args) => { watchCalls.push(args); return watchOverride ? watchOverride(...args) : new Promise(() => {}); },
+    readTextFile: async (p, options) => { if (p.endsWith('better-changes/mod.json')) return '{}'; if (p.endsWith('better-files/mod.json')) return null; if (readOverride) return readOverride(p, options); if (live.texts[p] instanceof Error) throw live.texts[p]; return live.texts[p] ?? null; },
     knownAgents: async () => known,
     hc: async (args) => { sent.push(args); return hcResult ?? { code: 0, stdout: '', stderr: '' }; },
     exec: async (bin, args, options) => {
       execs.push([bin, ...args]);
+      if (execOverride) {
+        const result = execOverride(bin, args, options);
+        if (result !== undefined) return result;
+      }
       if (bin === 'sh' && args[2] === 'copy-image') return (typeof copyImage === 'function' ? copyImage(args) : copyImage) ?? { code: 0, stdout: `${args[5]}-${live.pictures[args[3]] ?? '111-3'}.${args[6]}` };
       if (bin === 'sh' && args[2] === 'index') return { code: 0, stdout: found };
       if (bin === 'git' && args.includes('--deleted')) return top ? { code: 0, stdout: deleted } : { code: 128, stdout: '' };
@@ -118,7 +124,7 @@ function world({ pictures = {}, spaceFolder = '/repo', focusOn = null, storage =
   mod.init({}, cx);
   const flush = async () => { for (let i = 0; i < 25; i++) await new Promise(setImmediate); };
   const command = async (name) => { for (let i = 0; i < 25 && !waiting.length; i++) await new Promise(setImmediate); waiting.shift()(name); await flush(); };
-  return { mod, cx, store, kept, command, ran, execs, sent, clipboard, closed, overlays, urls, scrolled, later, live, context, flush, tick: () => { for (const fn of timers) fn(cx); } };
+  return { mod, cx, store, kept, command, ran, execs, sent, clipboard, closed, overlays, urls, scrolled, later, timers, watchCalls, live, context, flush, tick: () => { for (const fn of timers) fn(cx); } };
 }
 const ready = async (o) => { const h = world(o); await h.flush(); return h; };
 const find = (node, id) => (node?.elementId === id ? node : node?.nodes?.map((n) => find(n, id)).find(Boolean));
@@ -129,16 +135,286 @@ const viewers = (h) => Object.values(h.store.get('better-files.viewers') ?? {});
 const AGENT = (address, over = {}) => ({ address, space: 's', tab_name: `Agent ${address}`, status: 'idle', program: { key: 'claude' }, ...over });
 const CLAUDE = { key: 'claude', name: 'Claude Code', run: ['claude'], installed: true };
 
+test('tabs advance to the next four-column stop in current and replaced lines', () => {
+  const h = world();
+  assert.deepEqual(Array.from(h.context.fileLinesOf('a\tb\tc\n\tfoo\n1234\tx')), [
+    'a   b   c',
+    '    foo',
+    '1234    x',
+  ]);
+  const rows = h.context.buildRows(['new'], [{
+    kind: 'changed', line: 0, count: 1, oldStart: 1, old: ['a\tb'],
+  }], new Set(['changed-1']));
+  assert.equal(rows[0].text, 'a   b');
+});
+
+test('herdr-app check starts no listing, watch, settings task, or timer', () => {
+  const h = world({ checking: true });
+  assert.deepEqual(h.execs, []);
+  assert.deepEqual(h.watchCalls, []);
+  assert.deepEqual(h.timers, []);
+  assert.deepEqual(h.later, []);
+  assert.doesNotThrow(() => h.mod.render());
+});
+
 test('the tree lists folders first, opens lazily and marks what changed', async () => {
   const h = await ready();
   const list = strings(find(h.mod.render(), 'files-list'));
   assert.match(list, /src[\s\S]*a\.md[\s\S]*b\.md M/);
+  assert.equal(JSON.stringify(find(h.mod.render(), 'files-row-src').dragPaths), JSON.stringify([['/repo/src'], { on: null }]));
+  assert.equal(JSON.stringify(find(h.mod.render(), 'files-row-a.md').dragPaths), JSON.stringify([['/repo/a.md'], { on: null }]));
   assert.equal(find(h.mod.render(), 'files-row-src/main.go'), undefined);
   click(h, 'files-row-src');
   await h.flush();
   assert.match(strings(find(h.mod.render(), 'files-row-src/main.go')), /main\.go M/);
   click(h, 'files-row-src');
   assert.equal(find(h.mod.render(), 'files-row-src/main.go'), undefined);
+});
+
+test('dragging a remote file passes its machine with the absolute path', async () => {
+  const h = await ready({ machine: 'build' });
+  assert.equal(JSON.stringify(find(h.mod.render(), 'files-row-a.md').dragPaths), JSON.stringify([['/repo/a.md'], { on: 'build' }]));
+});
+
+test('a large folder keeps 500 entries and reports the upstream limit', async () => {
+  const entries = Array.from({ length: 501 }, (_, i) => ['f', `file-${String(i).padStart(3, '0')}`]);
+  const h = await ready({ tree: { '/repo': entries } });
+  assert.equal(h.mod.entries.get('').length, 500);
+  assert.equal(h.mod.entries.get('')[499].name, 'file-499');
+  assert.equal(h.mod.limited, true);
+  assert.match(strings(find(h.mod.render(), 'files-list')), /File list limited to 500 entries per folder and 5,000 total\./);
+});
+
+test('remote Windows retries a missing sh with PowerShell on the same machine', async () => {
+  const calls = [];
+  const h = await ready({ machine: 'remote', execOverride: (bin, args, options) => {
+    if (bin === 'sh' && args[2] === 'files') {
+      calls.push([bin, options.on]);
+      throw new Error('cannot start sh: program not found');
+    }
+    if (bin === 'powershell.exe') {
+      calls.push([bin, options.on]);
+      return { code: 0, stdout: 'd\0src\0f\0a.md\0' };
+    }
+  } });
+  assert.deepEqual(calls, [['sh', 'remote'], ['powershell.exe', 'remote']]);
+  assert.deepEqual(Array.from(h.mod.entries.get(''), e => [e.name, e.dir]), [['src', true], ['a.md', false]]);
+});
+
+test('a folder closed while loading does not retain the late listing', async () => {
+  let finish;
+  const h = await ready({ execOverride: (bin, args) => {
+    if (bin === 'sh' && args[2] === 'files' && args.at(-1) === '/repo/src')
+      return new Promise(resolve => { finish = resolve; });
+  } });
+  click(h, 'files-row-src');
+  click(h, 'files-row-src');
+  finish({ code: 0, stdout: 'f\0main.go\0' });
+  await h.flush();
+  assert.equal(h.mod.entries.has('src'), false);
+});
+
+test('reopening a slow folder rejects its earlier reply', async () => {
+  const pending = [];
+  const h = await ready({ execOverride: (bin, args) => {
+    if (bin === 'sh' && args[2] === 'files' && args.at(-1) === '/repo/src')
+      return new Promise(resolve => pending.push(resolve));
+  } });
+  click(h, 'files-row-src');
+  click(h, 'files-row-src');
+  click(h, 'files-row-src');
+  assert.equal(pending.length, 2);
+  pending[1]({ code: 0, stdout: 'f\0new.go\0' });
+  await h.flush();
+  pending[0]({ code: 0, stdout: 'f\0old.go\0' });
+  await h.flush();
+  assert.deepEqual(Array.from(h.mod.entries.get('src'), e => e.name), ['new.go']);
+});
+
+test('an old reveal cannot replace a new root folder read', async () => {
+  const pending = new Map();
+  const h = await ready({ execOverride: (bin, args) => {
+    const p = args.at(-1);
+    if (bin === 'sh' && args[2] === 'files' && ['/repo/src', '/other/src/sub'].includes(p))
+      return new Promise(resolve => pending.set(p, resolve));
+  } });
+  const oldContext = h.mod.context;
+  const calls = [];
+  const loadFolder = h.mod.loadFolder;
+  h.mod.loadFolder = function(path, root, on, context) {
+    calls.push([path, root]);
+    return loadFolder.call(this, path, root, on, context);
+  };
+  h.mod.revealFolder('src/sub', h.cx);
+  h.live.panes[0].cwd = '/other';
+  h.mod.refresh(h.cx);
+  h.mod.revealFolder('src/sub', h.cx);
+  await h.flush();
+  assert.equal(pending.has('/other/src/sub'), true);
+  pending.get('/repo/src')({ code: 0, stdout: 'd\0sub\0' });
+  await h.flush();
+  assert.equal(calls.some(([path, root]) => path === 'src/sub' && root === '/repo'), false);
+  await h.mod.loadFolder('src/sub', '/repo', null, oldContext);
+  pending.get('/other/src/sub')({ code: 0, stdout: 'f\0new.txt\0' });
+  await h.flush();
+  assert.deepEqual(Array.from(h.mod.folderLists.get('src/sub'), e => e.name), ['new.txt']);
+});
+
+test('refresh drops missing expanded folders and continues with their siblings', async () => {
+  let deleted = false;
+  const many = prefix => Array.from({ length: 500 }, (_, i) => ['f', `${prefix}${i}`]);
+  const tree = { '/repo': [['d', 'gone'], ['d', 'keep']], '/repo/gone': many('g'), '/repo/keep': many('k') };
+  const h = await ready({ tree, execOverride: (bin, args) => {
+    if (deleted && bin === 'sh' && args[2] === 'files' && args.at(-1) === '/repo/gone')
+      return { code: 1, stderr: 'not found', stdout: '' };
+  } });
+  click(h, 'files-row-gone');
+  click(h, 'files-row-keep');
+  await h.flush();
+  deleted = true;
+  tree['/repo'] = [['d', 'keep']];
+  tree['/repo/keep'] = [['f', 'new.txt']];
+  h.mod.refresh(h.cx);
+  await h.flush();
+  assert.equal(h.mod.folderLists.has('gone'), false);
+  assert.deepEqual(Array.from(h.mod.entries.get('keep'), e => e.name), ['new.txt']);
+  assert.equal(h.mod.treeError, null);
+});
+
+test('deleting an expanded parent prunes its expanded child without an error', async () => {
+  let deleted = false;
+  const tree = { '/repo': [['d', 'gone'], ['d', 'keep']], '/repo/gone': [['d', 'sub']], '/repo/gone/sub': [['f', 'old.txt']], '/repo/keep': [['f', 'new.txt']] };
+  const h = await ready({ tree, execOverride: (bin, args) => {
+    if (deleted && bin === 'sh' && args[2] === 'files' && args.at(-1).startsWith('/repo/gone'))
+      return { code: 1, stderr: 'not found', stdout: '' };
+  } });
+  click(h, 'files-row-gone');
+  await h.flush();
+  click(h, 'files-row-gone/sub');
+  await h.flush();
+  deleted = true;
+  tree['/repo'] = [['d', 'keep']];
+  h.mod.refresh(h.cx);
+  await h.flush();
+  assert.equal(h.mod.treeError, null);
+  assert.deepEqual(Array.from(h.mod.folders), []);
+  assert.equal(h.mod.folderLists.has('gone/sub'), false);
+});
+
+test('refresh reports an unreadable listed folder and still refreshes siblings', async () => {
+  let denied = false;
+  const tree = { '/repo': [['d', 'locked'], ['d', 'keep']], '/repo/locked': [['f', 'old.txt']], '/repo/keep': [['f', 'old.txt']] };
+  const h = await ready({ tree, execOverride: (bin, args) => {
+    if (denied && bin === 'sh' && args[2] === 'files' && args.at(-1) === '/repo/locked')
+      return { code: 1, stderr: 'permission denied', stdout: '' };
+  } });
+  click(h, 'files-row-locked');
+  click(h, 'files-row-keep');
+  await h.flush();
+  denied = true;
+  tree['/repo/keep'] = [['f', 'new.txt']];
+  h.mod.refresh(h.cx);
+  await h.flush();
+  assert.equal(h.mod.treeError, 'permission denied');
+  assert.deepEqual(Array.from(h.mod.entries.get('locked'), e => e.name), ['old.txt']);
+  assert.deepEqual(Array.from(h.mod.entries.get('keep'), e => e.name), ['new.txt']);
+});
+
+test('a truncated parent listing keeps a failing child and its error', async () => {
+  let broken = false;
+  const tree = { '/repo': [['d', 'live'], ['d', 'keep']], '/repo/live': [['f', 'old.txt']], '/repo/keep': [['f', 'old.txt']] };
+  const h = await ready({ tree, execOverride: (bin, args) => {
+    if (broken && bin === 'sh' && args[2] === 'files' && args.at(-1) === '/repo/live')
+      return { code: 1, stderr: 'permission denied', stdout: '' };
+  } });
+  const PER_FOLDER = h.context.PER_FOLDER;
+  click(h, 'files-row-live');
+  click(h, 'files-row-keep');
+  await h.flush();
+  broken = true;
+  const fillers = Array.from({ length: PER_FOLDER }, (_, i) => ['f', `file-${String(i).padStart(3, '0')}`]);
+  tree['/repo'] = [['d', 'keep'], ...fillers];
+  tree['/repo/keep'] = [['f', 'new.txt']];
+  h.mod.refresh(h.cx);
+  await h.flush();
+  assert.equal(h.mod.folderLists.get('').length, PER_FOLDER + 1, 'the read is the truncated one past the cap');
+  assert.equal(h.mod.treeError, 'permission denied', 'absence from a truncated listing does not prove deletion');
+  assert.equal(h.mod.folders.has('live'), true);
+  assert.equal(h.mod.folderLists.has('live'), true);
+  assert.deepEqual(Array.from(h.mod.entries.get('keep'), e => e.name), ['new.txt']);
+});
+
+test('an old visit cannot overwrite a later visit to the same folder', async () => {
+  const requests = [];
+  const h = world({ execOverride: (bin, args) => {
+    if (bin === 'sh' && args[2] === 'files' && args.at(-1) === '/repo')
+      return new Promise((resolve, reject) => requests.push({ resolve, reject }));
+  } });
+  h.live.panes[0].cwd = '/other';
+  h.mod.refresh(h.cx);
+  h.live.panes[0].cwd = '/repo';
+  h.mod.refresh(h.cx);
+  assert.equal(requests.length, 2);
+  requests[1].resolve({ code: 0, stdout: 'f\0new.txt\0' });
+  await h.flush();
+  requests[0].resolve({ code: 0, stdout: 'f\0old.txt\0' });
+  await h.flush();
+  assert.deepEqual(Array.from(h.mod.entries.get(''), e => e.name), ['new.txt']);
+  assert.equal(h.mod.treeError, null);
+  assert.equal(h.mod.loading, null);
+});
+
+test('changing folder and closing cancel their watches without restarting them', async () => {
+  const watched = [];
+  const h = await ready({ watchOverride: (root) => {
+    if (root === '/app/mods/better-icons') return new Promise(() => {});
+    let finish;
+    const promise = new Promise(resolve => { finish = resolve; });
+    const entry = { root, cancelled: 0 };
+    promise.cancel = () => { entry.cancelled++; finish([]); };
+    watched.push(entry);
+    return promise;
+  } });
+  h.live.panes[0].cwd = '/other';
+  h.mod.refresh(h.cx);
+  await h.flush();
+  assert.deepEqual(watched.map(({ root, cancelled }) => [root, cancelled]), [['/repo', 1], ['/other', 0]]);
+  await h.mod.close();
+  await h.flush();
+  assert.deepEqual(watched.map(({ root, cancelled }) => [root, cancelled]), [['/repo', 1], ['/other', 1]]);
+});
+
+test('closing a folder restores rows truncated by the total cap', async () => {
+  const h = await ready();
+  const entries = (prefix, count) => Array.from({ length: count }, (_, i) => ({ name: `${prefix}${i}`, dir: false }));
+  const names = [...Array.from({ length: 8 }, (_, i) => `f${i}`), 'f8a', 'f9b'];
+  h.mod.folders = new Set(names);
+  h.mod.folderLists = new Map([['', names.map(name => ({ name, dir: true }))], ...names.map(name => [name, entries(name, 500)])]);
+  h.mod.allocateEntries();
+  assert.equal(h.mod.entries.get('f9b').length, 490);
+  assert.equal(h.mod.limited, true);
+  h.mod.toggleFolder('f8a', h.cx);
+  assert.equal(h.mod.entries.get('f9b').length, 500);
+  assert.equal(h.mod.limited, false);
+});
+
+test('the filter indexes a remote Windows folder outside Git without sh', async () => {
+  const calls = [];
+  const h = await ready({ machine: 'remote', top: null, execOverride: (bin, args, options) => {
+    if (bin === 'sh' && args[2] === 'index') {
+      calls.push([bin, options.on]);
+      throw new Error('cannot start sh: program not found');
+    }
+    if (bin === 'powershell.exe') {
+      calls.push([bin, options.on]);
+      return { code: 0, stdout: 'src/main.go\0a.md\0' };
+    }
+  } });
+  h.mod.filter.set_value('main');
+  await h.flush();
+  assert.deepEqual(calls, [['sh', 'remote'], ['powershell.exe', 'remote']]);
+  assert.deepEqual(Array.from(h.mod.index.files), ['src/main.go', 'a.md']);
+  assert.deepEqual(Array.from(h.mod.index.dirs), ['src']);
 });
 
 test('git marks match the tree when the root is native but git reports forward slashes (windows)', async () => {
@@ -385,6 +661,25 @@ test('a tab held by an entry from another space can still be claimed by its own 
   assert.equal(h.store.get('better-files.viewers').r.tab, 'tab9');
 });
 
+test('a viewer ignores a late read of the same path on another machine', async () => {
+  const local = { path: '/repo/a.txt', root: '/repo', on: null };
+  const remote = { path: '/repo/a.txt', root: '/repo', on: 'remote' };
+  const pending = [];
+  const h = world({ mode: 'viewer', viewer: 'v', file: local, readOverride: (p, options) => {
+    if (p !== '/repo/a.txt') return null;
+    return new Promise(resolve => pending.push({ on: options.on, resolve }));
+  } });
+  h.mod.setViewer('v', { file: remote });
+  h.mod.syncViewer(h.cx);
+  assert.deepEqual(pending.map(p => p.on), [null, 'remote']);
+  pending[1].resolve('remote contents');
+  await h.flush();
+  pending[0].resolve('old local contents');
+  await h.flush();
+  assert.equal(h.mod.text, 'remote contents');
+  assert.equal(h.mod.file.on, 'remote');
+});
+
 test('the viewer follows the file, and keeps the same rows until it really changes', async () => {
   const file = { path: '/repo/src/main.go', root: '/repo', on: null };
   const h = await ready({ mode: 'viewer', viewer: 'v', file, texts: { '/repo/src/main.go': 'one' } });
@@ -623,7 +918,7 @@ test('an image shows as a picture, with no text read and no gutter', async () =>
   h.tick();
   await h.flush();
   assert.match(strings(find(h.mod.render(), 'viewer-image')), /^image:mods\/better-files\/\.cache\/v-111-3\.jpg$/, 'a new file, a new name');
-  assert.equal(h.execs.filter((e) => e[3] === 'copy-image').at(-1)[8], '/app/mods/better-files/.cache/v-111-3.png', 'the old copy goes');
+  assert.equal(h.execs.filter((e) => e[3] === 'copy-image').at(-1)[8], '/app/mods/better-files/.cache/v-111-3.png', 'the previous copy is identified');
   await h.mod.close();
   assert.deepEqual(JSON.parse(JSON.stringify(h.execs.at(-1))), ['rm', '-f', '--', '/app/mods/better-files/.cache/v-111-3.jpg']);
   const gone = await ready({ mode: 'viewer', viewer: 'v', file, copyImage: { code: 1 } });
@@ -1470,6 +1765,10 @@ test('the copy script names a copy by its checksum, copies once, and removes the
   assert.equal(run([src, cache, 'v', 'png', path.join(cache, first.stdout)]).stdout, first.stdout, 'the same picture keeps its name and its copy');
   assert.equal(fs.statSync(path.join(cache, first.stdout)).ino, kept, 'not copied again');
   fs.writeFileSync(src, 'two!');
+  const retained = run([src, cache, 'v', 'png', path.join(cache, first.stdout), 'retain']);
+  assert.equal(retained.status, 0);
+  assert.equal(fs.readFileSync(path.join(cache, first.stdout), 'utf8'), 'one');
+  assert.equal(fs.readFileSync(path.join(cache, retained.stdout), 'utf8'), 'two!');
   const second = run([src, cache, 'v', 'png', path.join(cache, first.stdout)]);
   assert.equal(second.status, 0);
   assert.match(second.stdout, /^v-\d+-4\.png$/);
@@ -1568,6 +1867,622 @@ test('the row view recolours when another file has the same text', async () => {
 test('syntax.js is the same file in Better Files and Better Changes', () => {
   const read = (mod) => fs.readFileSync(path.join(__dirname, `../../${mod}/mods/${mod}/syntax.js`), 'utf8');
   assert.equal(read('better-files'), read('better-changes'));
+});
+
+test('a viewer serializes image copies when the file changes', async () => {
+  const file = { path: '/repo/a.png', root: '/repo', on: null };
+  const pending = [];
+  const h = world({ mode: 'viewer', viewer: 'v', file, copyImage: args => new Promise(resolve => pending.push({ path: args[3], resolve })) });
+  assert.equal(pending.length, 1);
+  h.store.set('better-files.viewers', { v: { file: { ...file, path: '/repo/b.png' }, tab: 'tab1' } });
+  h.mod.syncViewer(h.cx);
+  assert.equal(pending.length, 1);
+  pending[0].resolve({ code: 0, stdout: 'v-111-3.png' });
+  await h.flush();
+  h.mod.readFile(h.cx);
+  assert.equal(pending.length, 2);
+  assert.equal(pending[1].path, '/repo/b.png');
+  pending[1].resolve({ code: 0, stdout: 'v-222-4.png' });
+  await h.flush();
+  assert.equal(h.mod.imageShown, 'mods/better-files/.cache/v-222-4.png');
+});
+
+test('selecting another image clears the previous image while its copy is pending', async () => {
+  const file = { path: '/repo/a.png', root: '/repo', on: null };
+  const pending = [];
+  const h = await ready({ mode: 'viewer', viewer: 'v', file });
+  h.context.exec = (bin, args) => args[2] === 'copy-image'
+    ? new Promise(resolve => pending.push(resolve))
+    : Promise.resolve({ code: 0, stdout: '' });
+  h.mod.readImage(h.cx);
+  h.store.set('better-files.viewers', { v: { file: { ...file, path: '/repo/b.png' }, tab: 'tab1' } });
+  h.mod.syncViewer(h.cx);
+  assert.equal(h.mod.imageShown, null);
+});
+
+test('a viewer removes obsolete image copies after each update', async () => {
+  const file = { path: '/repo/a.png', root: '/repo', on: null };
+  const h = await ready({ mode: 'viewer', viewer: 'v', file });
+  for (let i = 0; i < 28; i++) {
+    h.live.pictures[file.path] = `${i + 200}-4`;
+    h.mod.readImage(h.cx);
+    await h.flush();
+  }
+  assert.equal(h.mod.imageCopies.size, 1);
+  assert.equal(h.mod.imageCopies.has(h.mod.imageShown), true);
+  const removed = h.execs.filter(args => args[0] === 'rm').flatMap(args => args.slice(3));
+  assert.equal(removed.length, 28);
+  assert.equal(removed.includes(`/app/${h.mod.imageShown}`), false);
+});
+
+test('failed image cleanup is retried on the next update and at close', async () => {
+  const file = { path: '/repo/a.png', root: '/repo', on: null };
+  const removals = [];
+  let fail = true;
+  const h = await ready({ mode: 'viewer', viewer: 'v', file, execOverride: (bin, args) => {
+    if (bin === 'rm') {
+      removals.push([...args]);
+      return { code: fail ? 1 : 0, stderr: fail ? 'denied' : '' };
+    }
+  } });
+  const first = h.mod.imageShown;
+  h.live.pictures[file.path] = '222-4';
+  h.mod.readImage(h.cx);
+  await h.flush();
+  assert.equal(h.mod.imageCopies.has(first), true);
+  fail = false;
+  h.mod.readImage(h.cx);
+  await h.flush();
+  assert.equal(h.mod.imageCopies.has(first), false);
+  assert.equal(removals.length, 2);
+  fail = true;
+  await h.mod.close();
+  assert.equal(h.mod.imageCopies.has(h.mod.imageShown), true);
+  fail = false;
+  await h.mod.close();
+  assert.equal(h.mod.imageCopies.size, 0);
+});
+
+test('closing retries a copy that an earlier update could not remove', async () => {
+  const file = { path: '/repo/a.png', root: '/repo', on: null };
+  const removals = [];
+  let fail = true;
+  const h = await ready({ mode: 'viewer', viewer: 'v', file, execOverride: (bin, args) => {
+    if (bin === 'rm') {
+      removals.push([...args]);
+      return { code: fail ? 1 : 0 };
+    }
+  } });
+  const old = h.mod.imageShown;
+  h.live.pictures[file.path] = '222-4';
+  h.mod.readImage(h.cx);
+  await h.flush();
+  assert.equal(h.mod.imageCopies.has(old), true);
+  fail = false;
+  await h.mod.close();
+  assert.equal(removals.length, 2);
+  assert.equal(removals[1].includes(`/app/${old}`), true);
+  assert.equal(h.mod.imageCopies.size, 0);
+});
+
+test('a failed close is retried by a separate sidebar', async () => {
+  const file = { path: '/repo/a.png', root: '/repo', on: null };
+  let fail = true;
+  const h = await ready({ mode: 'viewer', viewer: 'v', file, execOverride: (bin) => {
+    if (bin === 'rm') return { code: fail ? 1 : 0 };
+  } });
+  const old = h.mod.imageShown;
+  await h.mod.close();
+  assert.deepEqual(Array.from(h.store.get('better-files.cleanup')), [old]);
+  fail = false;
+  h.context.props = () => ({ mode: 'sidebar' });
+  const sidebar = new h.context.Mod();
+  sidebar.init({}, h.cx);
+  sidebar.follow(h.cx);
+  await h.flush();
+  assert.deepEqual(Array.from(h.store.get('better-files.cleanup')), []);
+  assert.ok(h.execs.some(args => args[0] === 'rm' && args.includes(`/app/${old}`)));
+});
+
+test('closing a cleanup worker releases the next sidebar and ignores stale results', async () => {
+  const path = 'mods/better-files/.cache/vdead-1-1.png';
+  let release;
+  let block = true;
+  const h = await ready({ sharedInit: { 'better-files.cleanup': [path] }, execOverride: bin => {
+    if (bin === 'rm') return block ? new Promise(resolve => { release = resolve; }) : { code: 0 };
+  } });
+  h.mod.retryCleanup(h.cx);
+  await h.flush();
+  assert.equal(typeof release, 'function');
+  await h.mod.close();
+  block = false;
+  const sidebar = new h.context.Mod();
+  sidebar.init({}, h.cx);
+  sidebar.retryCleanup(h.cx);
+  await h.flush();
+  assert.deepEqual(Array.from(h.store.get('better-files.cleanup')), []);
+  release({ code: 1 });
+  await h.flush();
+  assert.deepEqual(Array.from(h.store.get('better-files.cleanup')), []);
+});
+
+test('a closing viewer cannot reclaim the cleanup worker', async () => {
+  const file = { path: '/repo/a.png', root: '/repo', on: null };
+  const queued = 'mods/better-files/.cache/vdead-1-1.png';
+  let block = true;
+  let attempts = 0;
+  const h = await ready({ mode: 'viewer', viewer: 'vclosing', file, execOverride: bin => {
+    if (bin === 'rm') {
+      attempts++;
+      return block ? new Promise(() => {}) : { code: 0 };
+    }
+  } });
+  h.mod.queueCleanup([queued]);
+  h.mod.close();
+  h.mod.retryCleanup(h.cx);
+  await h.flush();
+  assert.equal(attempts, 1);
+  block = false;
+  h.context.props = () => ({ mode: 'sidebar' });
+  const sidebar = new h.context.Mod();
+  sidebar.init({}, h.cx);
+  sidebar.retryCleanup(h.cx);
+  await h.flush();
+  assert.equal(h.store.get('better-files.cleanup').includes(queued), false);
+});
+
+test('a pending-copy close invalidates an older empty sweep confirmation', async () => {
+  let block = false;
+  let release;
+  const h = await ready({ sharedInit: { 'better-files.cleanupOverflow': true }, execOverride: (bin, args) => {
+    if (bin === 'sh' && args[2] === 'cleanup-list')
+      return block ? new Promise(resolve => { release = resolve; }) : { code: 0, stdout: '' };
+    if (bin === 'sh' && args[2] === 'copy-image') return new Promise(() => {});
+  } });
+  h.mod.retryCleanup(h.cx);
+  await h.flush();
+  block = true;
+  h.mod.cleanupNext = 0;
+  h.mod.retryCleanup(h.cx);
+  await h.flush();
+  h.context.props = () => ({ mode: 'viewer', viewer: 'vnew', file: { path: '/repo/a.png', root: '/repo', on: null } });
+  const viewer = new h.context.Mod();
+  viewer.init({}, h.cx);
+  await viewer.close();
+  h.store.set('better-files.cleanupNotBefore', 0);
+  release({ code: 0, stdout: '' });
+  await h.flush();
+  assert.equal(h.store.get('better-files.cleanupOverflow'), true);
+});
+
+test('late Markdown image removal failure is handed to durable cleanup', async () => {
+  const file = { path: '/repo/readme.md', root: '/repo', on: null };
+  let release;
+  const h = await ready({ mode: 'viewer', viewer: 'vmd', file, texts: { '/repo/readme.md': '![image](a.png)' }, copyImage: () => new Promise(resolve => { release = resolve; }), execOverride: bin => {
+    if (bin === 'rm') return { code: 1 };
+  } });
+  assert.equal(typeof release, 'function');
+  await h.mod.close();
+  assert.equal(h.store.get('better-files.cleanupOverflow'), true);
+  release({ code: 0, stdout: 'vmd-m1-123-3.png' });
+  await h.flush();
+  assert.deepEqual(Array.from(h.store.get('better-files.cleanup')), ['mods/better-files/.cache/vmd-m1-123-3.png']);
+});
+
+test('an unclaimed viewer owns its cache against another sidebar cleanup', async () => {
+  const file = { path: '/repo/a.png', root: '/repo', on: null };
+  const h = await ready({ mode: 'viewer', viewer: 'vowner', file });
+  const copy = h.mod.imageShown;
+  h.store.set('better-files.cleanup', [copy]);
+  h.store.set('better-files.cleanupOverflow', true);
+  const originalExec = h.context.exec;
+  h.context.exec = (bin, args, options) => {
+    if (bin === 'sh' && args[2] === 'cleanup-list') return Promise.resolve({ code: 0, stdout: `f\0${copy.split('/').at(-1)}\0` });
+    return originalExec(bin, args, options);
+  };
+  h.context.props = () => ({ mode: 'sidebar' });
+  const sidebar = new h.context.Mod();
+  sidebar.init({}, h.cx);
+  sidebar.retryCleanup(h.cx);
+  await h.flush();
+  assert.deepEqual(Array.from(h.store.get('better-files.cleanup')), [copy]);
+  assert.equal(h.execs.filter(args => args[0] === 'rm' && args.includes(`/app/${copy}`)).length, 0);
+});
+
+test('a skipped protected copy is scanned again when its owner closes', async () => {
+  const prefix = 'mods/better-files/.cache/';
+  const old = `${prefix}vlive-987-3.png`;
+  const files = new Set([old]);
+  const file = { path: '/repo/a.png', root: '/repo', on: null };
+  const h = await ready({ mode: 'viewer', viewer: 'vlive', file, sharedInit: { 'better-files.cleanupOverflow': true }, execOverride: (bin, args) => {
+    if (bin === 'sh' && args[2] === 'cleanup-list')
+      return { code: 0, stdout: [...files].sort().slice(Number(args[4]), Number(args[4]) + 501).flatMap(path => ['f', path.slice(prefix.length)]).join('\0') + '\0' };
+    if (bin === 'rm') {
+      for (const path of args.slice(2)) files.delete(path.replace(/^\/app\//, ''));
+      return { code: 0 };
+    }
+  } });
+  h.context.props = () => ({ mode: 'sidebar' });
+  const sidebar = new h.context.Mod();
+  sidebar.init({}, h.cx);
+  for (let i = 0; i < 3; i++) {
+    sidebar.cleanupNext = 0;
+    sidebar.retryCleanup(h.cx);
+    await h.flush();
+  }
+  assert.equal(files.has(old), true);
+  assert.equal(h.store.get('better-files.cleanupOverflow'), true);
+  const generation = Number(h.store.get('better-files.cleanupGeneration')) || 0;
+  await h.mod.close();
+  assert.ok(h.store.get('better-files.cleanupGeneration') > generation);
+  for (let i = 0; i < 4; i++) {
+    sidebar.cleanupNext = 0;
+    sidebar.retryCleanup(h.cx);
+    await h.flush();
+  }
+  assert.equal(files.has(old), false);
+});
+
+test('closing a viewer with a canceled copy releases ownership and schedules reconciliation', async () => {
+  const file = { path: '/repo/a.png', root: '/repo', on: null };
+  const orphan = 'mods/better-files/.cache/vcancel-123-1.png';
+  const removed = [];
+  let copyTimeout;
+  const h = await ready({ mode: 'viewer', viewer: 'vcancel', file, execOverride: (bin, args, options) => {
+    if (bin === 'sh' && args[2] === 'copy-image') { copyTimeout = options.timeout; return new Promise(() => {}); }
+    if (bin === 'sh' && args[2] === 'cleanup-list') return { code: 0, stdout: 'f\0vcancel-123-1.png\0' };
+    if (bin === 'rm') { removed.push(...args.slice(2)); return { code: 0 }; }
+  } });
+  await h.mod.close();
+  assert.equal(h.store.get('better-files.cleanupOverflow'), true);
+  assert.equal(copyTimeout, 10000);
+  assert.ok(h.store.get('better-files.cleanupNotBefore') > Date.now());
+  h.store.set('better-files.cleanupNotBefore', 0);
+  h.context.props = () => ({ mode: 'sidebar' });
+  const sidebar = new h.context.Mod();
+  sidebar.init({}, h.cx);
+  sidebar.retryCleanup(h.cx);
+  await h.flush();
+  assert.deepEqual(removed, [`/app/${orphan}`]);
+});
+
+test('closing hands known copies off before a canceled removal can finish', async () => {
+  const file = { path: '/repo/a.png', root: '/repo', on: null };
+  const h = await ready({ mode: 'viewer', viewer: 'vclose', file });
+  const copy = h.mod.imageShown;
+  const exec = h.context.exec;
+  h.context.exec = (bin, args, options) => bin === 'rm' ? new Promise(() => {}) : exec(bin, args, options);
+  h.mod.close();
+  assert.deepEqual(Array.from(h.store.get('better-files.cleanup')), [copy]);
+  h.context.exec = exec;
+  h.context.props = () => ({ mode: 'sidebar' });
+  const sidebar = new h.context.Mod();
+  sidebar.init({}, h.cx);
+  sidebar.retryCleanup(h.cx);
+  await h.flush();
+  assert.deepEqual(Array.from(h.store.get('better-files.cleanup')), []);
+});
+
+test('a timer cannot start another direct image copy while close waits', async () => {
+  const file = { path: '/repo/a.png', root: '/repo', on: null };
+  const h = await ready({ mode: 'viewer', viewer: 'vtimer', file, execOverride: bin => {
+    if (bin === 'rm') return new Promise(() => {});
+  } });
+  const count = () => h.execs.filter(args => args[3] === 'copy-image').length;
+  const before = count();
+  h.mod.close();
+  h.tick();
+  h.mod.readFile(h.cx);
+  h.mod.readImage(h.cx);
+  await h.flush();
+  assert.equal(count(), before);
+});
+
+test('a timer cannot start another Markdown image copy while close waits', async () => {
+  const file = { path: '/repo/readme.md', root: '/repo', on: null };
+  let reads = 0;
+  const h = await ready({ mode: 'viewer', viewer: 'vmdtimer', file, readOverride: path => {
+    if (path === file.path) { reads++; return '![image](a.png)'; }
+    return null;
+  }, execOverride: bin => {
+    if (bin === 'rm') return new Promise(() => {});
+  } });
+  const count = () => h.execs.filter(args => args[3] === 'copy-image').length;
+  const before = count();
+  const readsBefore = reads;
+  assert.ok(before > 0);
+  h.mod.close();
+  h.tick();
+  h.mod.readFile(h.cx);
+  h.mod.readMarkdownImages(h.cx);
+  await h.flush();
+  assert.equal(count(), before);
+  assert.equal(reads, readsBefore);
+});
+
+test('a locked cleanup path does not block later paths', async () => {
+  const paths = Array.from({ length: 33 }, (_, i) => `mods/better-files/.cache/vdead${i}-1-1.png`);
+  const h = await ready({ execOverride: (bin, args) => {
+    if (bin === 'rm') return { code: args.includes(`/app/${paths[0]}`) ? 1 : 0 };
+  } });
+  h.mod.queueCleanup(paths);
+  h.mod.retryCleanup(h.cx);
+  await h.flush();
+  h.mod.cleanupNext = 0;
+  h.mod.retryCleanup(h.cx);
+  await h.flush();
+  assert.deepEqual(Array.from(h.store.get('better-files.cleanup')), [paths[0]]);
+});
+
+test('an open viewer transfers a large failed image backlog to bounded cleanup', async () => {
+  const file = { path: '/repo/a.png', root: '/repo', on: null };
+  const h = await ready({ mode: 'viewer', viewer: 'vbacklog', file, execOverride: bin => {
+    if (bin === 'rm') return { code: 1 };
+  } });
+  for (let i = 0; i < 270; i++) h.mod.imageCopies.add(`mods/better-files/.cache/vbacklog-${i}-1.png`);
+  h.mod.readImage(h.cx);
+  await h.flush();
+  assert.ok(h.mod.imageCopies.size <= 33);
+  assert.ok(h.store.get('better-files.cleanup').length <= 256);
+  assert.equal(h.store.get('better-files.cleanup').length, 238);
+  assert.ok(h.execs.filter(args => args[0] === 'rm').every(args => args.length - 3 <= 32));
+});
+
+test('a locked image copy does not block later viewer cleanup', async () => {
+  const file = { path: '/repo/a.png', root: '/repo', on: null };
+  const files = new Set();
+  let current = 0;
+  const h = await ready({ mode: 'viewer', viewer: 'vlock', file, copyImage: args => {
+    const name = `vlock-${args[3] === file.path ? current : 0}-1.png`;
+    files.add(`/app/mods/better-files/.cache/${name}`);
+    return { code: 0, stdout: name };
+  }, execOverride: (bin, args) => {
+    if (bin === 'rm') {
+      if (args.slice(2).some(path => path.endsWith('/vlock-0-1.png'))) return { code: 1 };
+      for (const path of args.slice(2)) files.delete(path);
+      return { code: 0 };
+    }
+  } });
+  for (current = 1; current <= 300; current++) {
+    h.mod.readImage(h.cx);
+    await h.flush();
+  }
+  assert.deepEqual([...files].sort(), ['/app/mods/better-files/.cache/vlock-0-1.png', '/app/mods/better-files/.cache/vlock-300-1.png']);
+});
+
+test('viewer removes each obsolete copy separately when one is locked', async () => {
+  const file = { path: '/repo/a.png', root: '/repo', on: null };
+  const old = 'mods/better-files/.cache/vlock-1-1.png';
+  const good = 'mods/better-files/.cache/vlock-2-1.png';
+  const removed = [];
+  const h = await ready({ mode: 'viewer', viewer: 'vlock', file, execOverride: (bin, args) => {
+    if (bin === 'rm') {
+      if (args.includes(`/app/${old}`)) return { code: 1 };
+      removed.push(...args.slice(2));
+      return { code: 0 };
+    }
+  } });
+  h.mod.imageCopies.add(old);
+  h.mod.imageCopies.add(good);
+  h.mod.readImage(h.cx);
+  await h.flush();
+  assert.deepEqual(removed, [`/app/${good}`]);
+  assert.equal(h.mod.imageCopies.has(old), true);
+  assert.equal(h.mod.imageCopies.has(good), false);
+});
+
+test('cleanup overflow stays bounded and reconciles without removing live or web images', async () => {
+  const prefix = 'mods/better-files/.cache/';
+  const copies = Array.from({ length: 260 }, (_, i) => `${prefix}vdead${i}-123-3.png`);
+  const files = new Set([...copies, `${prefix}vlive-456-3.png`, `${prefix}web-abc.svg`]);
+  const h = await ready({ sharedInit: { 'better-files.viewers': { vlive: { tab: 'tab1' } } }, execOverride: (bin, args) => {
+    if (bin === 'sh' && args[2] === 'cleanup-list' && args[3] === '/app/mods/better-files/.cache')
+      return { code: 0, stdout: [...files].sort().slice(Number(args[4]), Number(args[4]) + 501).flatMap(path => ['f', path.slice(prefix.length)]).join('\0') + '\0' };
+    if (bin === 'rm') {
+      for (const path of args.slice(2)) files.delete(path.replace(/^\/app\//, ''));
+      return { code: 0 };
+    }
+  } });
+  h.mod.queueCleanup(copies);
+  assert.equal(h.store.get('better-files.cleanup').length, 256);
+  assert.equal(h.store.get('better-files.cleanupOverflow'), true);
+  assert.match(strings(h.mod.render()), /Image cache cleanup is pending/);
+  for (let i = 0; i < 12; i++) {
+    h.mod.cleanupNext = 0;
+    h.mod.retryCleanup(h.cx);
+    await h.flush();
+  }
+  assert.deepEqual(Array.from(files).sort(), [`${prefix}vlive-456-3.png`, `${prefix}web-abc.svg`].sort());
+  assert.equal(h.store.get('better-files.cleanupOverflow'), true);
+  assert.equal(h.store.get('better-files.cleanup').length, 0);
+});
+
+test('cleanup keeps its warning when a full listing cannot prove reconciliation', async () => {
+  const h = await ready({ sharedInit: { 'better-files.cleanupOverflow': true }, execOverride: (bin, args) => {
+    if (bin === 'sh' && args[2] === 'cleanup-list' && args[3] === '/app/mods/better-files/.cache') {
+      const names = Array.from({ length: 501 }, (_, i) => `web-${i}.svg`);
+      return { code: 0, stdout: names.slice(Number(args[4]), Number(args[4]) + 501).flatMap(name => ['f', name]).join('\0') + '\0' };
+    }
+  } });
+  h.mod.retryCleanup(h.cx);
+  await h.flush();
+  assert.equal(h.store.get('better-files.cleanupOverflow'), true);
+  assert.match(strings(h.mod.render()), /Image cache cleanup is pending/);
+  assert.equal(h.execs.filter(args => args[0] === 'rm').length, 0);
+});
+
+test('a sweep finishes when the cache folder itself is gone', { skip: process.platform === 'win32' }, async () => {
+  const os = require('node:os');
+  const { spawnSync } = require('node:child_process');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'bf-home-'));
+  const statuses = [];
+  const h = await ready({ sharedInit: { 'better-files.cleanupOverflow': true }, execOverride: (bin, args) => {
+    if (bin !== 'sh' || args[2] !== 'cleanup-list') return;
+    const r = spawnSync('sh', args, { encoding: 'utf8' });
+    statuses.push(r.status);
+    return { code: r.status, stdout: r.stdout, stderr: r.stderr };
+  } });
+  h.context.appHome = () => home;
+  assert.equal(fs.existsSync(path.join(home, 'mods/better-files/.cache')), false);
+  h.mod.retryCleanup(h.cx);
+  await h.flush();
+  assert.equal(h.store.get('better-files.cleanupOverflow'), true, 'one pass only starts the confirmation');
+  h.mod.cleanupNext = 0;
+  h.mod.retryCleanup(h.cx);
+  await h.flush();
+  assert.deepEqual(statuses, [0, 0], 'an absent cache folder lists as empty and succeeds');
+  assert.equal(h.store.get('better-files.cleanupOverflow'), false);
+  assert.doesNotMatch(strings(h.mod.render()), /Image cache cleanup is pending/);
+  fs.rmSync(home, { recursive: true });
+});
+
+test('a cache path that exists but cannot be listed keeps the warning', { skip: process.platform === 'win32' }, async () => {
+  const os = require('node:os');
+  const { spawnSync } = require('node:child_process');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'bf-home-'));
+  fs.mkdirSync(path.join(home, 'mods/better-files'), { recursive: true });
+  fs.writeFileSync(path.join(home, 'mods/better-files/.cache'), 'not a folder');
+  const statuses = [];
+  const h = await ready({ sharedInit: { 'better-files.cleanupOverflow': true }, execOverride: (bin, args) => {
+    if (bin !== 'sh' || args[2] !== 'cleanup-list') return;
+    const r = spawnSync('sh', args, { encoding: 'utf8' });
+    statuses.push(r.status);
+    return { code: r.status, stdout: r.stdout, stderr: r.stderr };
+  } });
+  h.context.appHome = () => home;
+  for (let i = 0; i < 3; i++) {
+    h.mod.cleanupNext = 0;
+    h.mod.retryCleanup(h.cx);
+    await h.flush();
+  }
+  assert.equal(statuses.length, 3);
+  assert.ok(statuses.every(code => code !== 0), 'a path that is not a folder is still an error');
+  assert.equal(h.store.get('better-files.cleanupOverflow'), true);
+  assert.match(strings(h.mod.render()), /Image cache cleanup is pending/);
+  fs.rmSync(home, { recursive: true });
+});
+
+test('a sweep that cannot list at all keeps the warning', async () => {
+  const h = await ready({ sharedInit: { 'better-files.cleanupOverflow': true }, execOverride: (bin, args) => {
+    if (bin === 'sh' && args[2] === 'cleanup-list') return { code: 1, stdout: '', stderr: 'Permission denied' };
+  } });
+  for (let i = 0; i < 3; i++) {
+    h.mod.cleanupNext = 0;
+    h.mod.retryCleanup(h.cx);
+    await h.flush();
+  }
+  assert.equal(h.store.get('better-files.cleanupOverflow'), true);
+  assert.match(strings(h.mod.render()), /Image cache cleanup is pending/);
+});
+
+test('sweep paginates beyond 501 entries and skips locked files', async () => {
+  const prefix = 'mods/better-files/.cache/';
+  const names = [...Array.from({ length: 510 }, (_, i) => `web-${String(i).padStart(4, '0')}.svg`),
+    ...Array.from({ length: 33 }, (_, i) => `vlocked${String(i).padStart(2, '0')}-1-1.png`),
+    'vtarget-1-1.png'];
+  const files = new Set(names.map(name => `${prefix}${name}`));
+  const h = await ready({ sharedInit: { 'better-files.cleanupOverflow': true }, execOverride: (bin, args) => {
+    if (bin === 'sh' && args[2] === 'cleanup-list')
+      return { code: 0, stdout: [...files].sort().slice(Number(args[4]), Number(args[4]) + 501).flatMap(path => ['f', path.slice(prefix.length)]).join('\0') + '\0' };
+    if (bin === 'rm') {
+      const path = args[2].replace(/^\/app\//, '');
+      if (path.includes('vlocked')) return { code: 1 };
+      files.delete(path);
+      return { code: 0 };
+    }
+  } });
+  for (let i = 0; i < 22; i++) {
+    h.mod.cleanupNext = 0;
+    h.mod.retryCleanup(h.cx);
+    await h.flush();
+  }
+  assert.equal(files.has(`${prefix}vtarget-1-1.png`), false);
+  assert.equal(files.has(`${prefix}vlocked00-1-1.png`), true);
+  assert.equal(h.store.get('better-files.cleanupOverflow'), true);
+});
+
+test('sweep removes an abandoned partial but protects an active partial', async () => {
+  const prefix = 'mods/better-files/.cache/';
+  const stale = `${prefix}vdead-123-1.png.part`;
+  const live = `${prefix}vlive-123-1.png.part`;
+  const files = new Set([stale, live]);
+  const file = { path: '/repo/a.png', root: '/repo', on: null };
+  const h = await ready({ mode: 'viewer', viewer: 'vlive', file, sharedInit: { 'better-files.cleanupOverflow': true, 'better-files.cleanupNotBefore': Date.now() + 60000 }, execOverride: (bin, args) => {
+    if (bin === 'sh' && args[2] === 'cleanup-list')
+      return { code: 0, stdout: [...files].sort().slice(Number(args[4]), Number(args[4]) + 501).flatMap(path => ['f', path.slice(prefix.length)]).join('\0') + '\0' };
+    if (bin === 'rm') {
+      for (const path of args.slice(2)) files.delete(path.replace(/^\/app\//, ''));
+      return { code: 0 };
+    }
+  } });
+  h.context.props = () => ({ mode: 'sidebar' });
+  const sidebar = new h.context.Mod();
+  sidebar.init({}, h.cx);
+  sidebar.retryCleanup(h.cx);
+  await h.flush();
+  assert.equal(files.has(stale), true);
+  assert.equal(h.execs.some(args => args[3] === 'cleanup-list'), false);
+  assert.equal(sidebar.cleanupNext, undefined);
+  h.store.set('better-files.cleanupNotBefore', 0);
+  for (let i = 0; i < 4; i++) {
+    sidebar.cleanupNext = 0;
+    sidebar.retryCleanup(h.cx);
+    await h.flush();
+  }
+  assert.equal(files.has(stale), false);
+  assert.equal(files.has(live), true);
+  assert.equal(h.store.get('better-files.cleanupOverflow'), true);
+});
+
+test('sweep rechecks partial ownership when a viewer opens during cleanup', async () => {
+  const stale = 'mods/better-files/.cache/vdead-123-1.png.part';
+  const live = 'mods/better-files/.cache/vnew-123-1.png.part';
+  let release;
+  const removed = [];
+  const h = await ready({ sharedInit: { 'better-files.cleanupOverflow': true }, execOverride: (bin, args) => {
+    if (bin === 'sh' && args[2] === 'cleanup-list') return { code: 0, stdout: 'f\0vdead-123-1.png.part\0f\0vnew-123-1.png.part\0' };
+    if (bin === 'rm') {
+      removed.push(...args.slice(2));
+      if (args.includes(`/app/${stale}`)) return new Promise(resolve => { release = resolve; });
+      return { code: 0 };
+    }
+  } });
+  h.mod.retryCleanup(h.cx);
+  await h.flush();
+  assert.equal(typeof release, 'function');
+  h.context.props = () => ({ mode: 'viewer', viewer: 'vnew', file: { path: '/repo/a.png', root: '/repo', on: null } });
+  const viewer = new h.context.Mod();
+  viewer.init({}, h.cx);
+  release({ code: 0 });
+  await h.flush();
+  assert.deepEqual(removed, [`/app/${stale}`]);
+  assert.equal(removed.includes(`/app/${live}`), false);
+});
+
+test('sweep rechecks from the start before clearing after earlier entries disappear', async () => {
+  const prefix = 'mods/better-files/.cache/';
+  const files = new Set([...Array.from({ length: 32 }, (_, i) => `${prefix}a${String(i).padStart(2, '0')}`), `${prefix}vorphan-1-1.png`]);
+  const h = await ready({ sharedInit: { 'better-files.cleanupOverflow': true }, execOverride: (bin, args) => {
+    if (bin === 'sh' && args[2] === 'cleanup-list')
+      return { code: 0, stdout: [...files].sort().slice(Number(args[4]), Number(args[4]) + 501).flatMap(path => ['f', path.slice(prefix.length)]).join('\0') + '\0' };
+    if (bin === 'rm') {
+      files.delete(args[2].replace(/^\/app\//, ''));
+      return { code: 0 };
+    }
+  } });
+  h.mod.retryCleanup(h.cx);
+  await h.flush();
+  for (const path of [...files]) if (path.slice(prefix.length).startsWith('a')) files.delete(path);
+  h.mod.cleanupNext = 0;
+  h.mod.retryCleanup(h.cx);
+  await h.flush();
+  assert.equal(h.store.get('better-files.cleanupOverflow'), true);
+  for (let i = 0; i < 4; i++) {
+    h.mod.cleanupNext = 0;
+    h.mod.retryCleanup(h.cx);
+    await h.flush();
+  }
+  assert.equal(files.has(`${prefix}vorphan-1-1.png`), false);
 });
 
 test('a picture copy that finishes after its tab moved on is replaced later, and one that finishes after the tab closed goes', async () => {

@@ -40,7 +40,7 @@ export const filterMethods = {
   // holding the keyboard on it. Its folders are read here, as a click on a chevron does: a
   // refresh skips a tree that is still loading.
   revealFolder(relative, cx) {
-    const { root, on, key } = this;
+    const { root, on, context } = this;
     const folders = foldersTo(relative, true);
     for (const folder of folders) this.folders.add(folder);
     this.scrollTo = relative;
@@ -49,9 +49,12 @@ export const filterMethods = {
     this.treeFocus.focus();
     cx.spawn(async (cx) => {
       try {
-        for (const folder of folders) await this.loadFolder(folder, root, on, key);
+        for (const folder of folders) {
+          if (!this.current(context)) return;
+          await this.loadFolder(folder, root, on, context);
+        }
       } catch (e) {
-        if (this.key === key) this.treeError = e.message ?? String(e);
+        if (this.current(context)) this.treeError = e.message ?? String(e);
       }
       cx.notify();
     });

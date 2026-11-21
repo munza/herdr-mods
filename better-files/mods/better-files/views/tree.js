@@ -83,6 +83,7 @@ export const treeMethods = {
       .border_color(marked ? t.accent : CLEAR)
       .text_size(TEXT.small)
       .cursor_pointer()
+      .drag_paths([path], { on: this.on ?? null })
       .when(selected, (el) => el.bg(t.selected))
       .when(!selected, (el) => el.hover((s) => s.bg(t.hover)))
       .on_click((event, cx) => {
@@ -234,6 +235,7 @@ export const treeMethods = {
     );
     if (this.root) root.child(this.filterRow(t));
     if (failure) root.child(Message(failure, true));
+    if (shared("better-files.cleanupOverflow")) root.child(Message("Image cache cleanup is pending. Keep Better Files open to retry.", true));
     if (this.notice) root.child(Message(this.notice));
     const body = v_flex()
       .id("files-list")
@@ -252,6 +254,7 @@ export const treeMethods = {
       if (!rows.length && !this.loading) body.child(Message("This folder is empty."));
       body.children(rows.map((r) => this.row(r.relative, r.name, r.dir, r.depth, t)));
       if (rows.length >= TOTAL_ROWS) body.child(Message(`Showing the first ${TOTAL_ROWS} rows.`));
+      else if (this.limited) body.child(Message("File list limited to 500 entries per folder and 5,000 total."));
       // A folder revealed from the filter is scrolled to once its row is there.
       const at = this.scrollTo ? rows.findIndex((r) => r.relative === this.scrollTo) : -1;
       if (at !== -1) {
@@ -264,4 +267,3 @@ export const treeMethods = {
     return root;
   },
 };
-

@@ -104,11 +104,16 @@ export const viewerMethods = {
   },
 
   syncViewer(cx) {
+    this.retryCleanup(cx);
     this.claimTab();
     const file = this.viewerEntry()?.file ?? this.viewerFile;
     if (!file) return;
-    if (file.path !== this.file?.path) {
-      this.file = file;
+    if (file.path !== this.file?.path || file.root !== this.file?.root || file.on !== this.file?.on) {
+      this.file = { ...file };
+      this.imageShown = null;
+      this.imageFor = null;
+      this.reading = null;
+      this.diffing = null;
       this.text = undefined;
       this.problem = null;
       this.code?.release();
@@ -127,7 +132,7 @@ export const viewerMethods = {
   readHunks(cx) {
     const file = this.file;
     if (!file || !this.gutterOn || this.diffing || isImage(file.path)) return;
-    this.diffing = true;
+    this.diffing = file;
     cx.spawn(async (cx) => {
       const git = (args) =>
         exec("git", ["--no-optional-locks", ...args], { cwd: file.root, on: file.on }).catch(() => null);
@@ -139,8 +144,8 @@ export const viewerMethods = {
         const diff = await git(["diff", "--no-color", "--no-ext-diff", "--no-textconv", "-U0", "HEAD", "--", file.path]);
         if (diff?.code === 0) marks = parseHunks(diff.stdout);
       }
-      this.diffing = false;
-      if (this.file?.path !== file.path) return;
+      if (this.diffing === file) this.diffing = null;
+      if (this.file !== file) return;
       if (JSON.stringify(marks) !== JSON.stringify(this.hunks)) {
         this.hunks = marks;
         cx.notify();
@@ -150,10 +155,11 @@ export const viewerMethods = {
 
   // Only a real change touches the view, so the place you're reading stays put.
   readFile(cx) {
+    if (this.closed) return;
     const file = this.file;
     if (file && isImage(file.path)) return this.readImage(cx);
     if (!file || this.reading) return;
-    this.reading = true;
+    this.reading = file;
     cx.spawn(async (cx) => {
       let shown;
       try {
@@ -161,8 +167,8 @@ export const viewerMethods = {
       } catch {
         shown = { problem: "This file can't be shown: it's too large, or can't be read." };
       }
-      this.reading = false;
-      if (this.file?.path !== file.path) return;
+      if (this.reading === file) this.reading = null;
+      if (this.file !== file) return;
       if (shown.problem) {
         this.problem = shown.problem;
         this.text = undefined;
@@ -397,36 +403,60 @@ export const viewerMethods = {
 
   // Removes copies this tab made, given as paths under Herdr's folder.
   async dropCopies(copies) {
-    if (!copies.length) return;
-    const { program, args } = pickRm(copies.map(absolute), window()?.platform);
-    await exec(program, args, {}).catch(() => {});
+    if (!copies.length) return true;
+    let removed = true;
+    for (let i = 0; i < copies.length; i += 32) {
+      const { program, args } = pickRm(copies.slice(i, i + 32).map(absolute), window()?.platform);
+      const result = await exec(program, args, { timeout: 10000 }).catch(() => null);
+      if (result?.code !== 0) removed = false;
+    }
+    return removed;
   },
 
   // Herdr only loads images from under its own folder, so the file is shown through a copy
   // in this mod's cache, named for what's in it. The copy it replaces goes once it's in.
   readImage(cx) {
+    if (this.closed) return;
     const file = this.file;
-    if (file.on || this.reading) return;
+    if (file.on || this.imageReading) return;
     if (this.imageFor !== file.path) {
       this.imageFor = file.path;
       this.imageShown = null;
     }
-    this.reading = true;
+    this.imageReading = file;
     cx.spawn(async (cx) => {
-      const { program, args } = pickCopyImage(file.path, absolute(CACHE), this.viewerId, extension(file.path), absolute(this.imageCopy), window()?.platform);
-      const result = await exec(program, args, {}).catch(() => null);
-      this.reading = false;
+      const { program, args } = pickCopyImage(file.path, absolute(CACHE), this.viewerId, extension(file.path), absolute(this.imageCopy), window()?.platform, Boolean(this.imageCopy));
+      const result = await exec(program, args, { timeout: 10000 }).catch(() => null);
       const copy = result?.code === 0 ? `${CACHE}/${result.stdout.trim()}` : null;
-      // Kept even when the tab has moved on, so the next copy replaces it; a closed tab's goes now.
-      if (copy) this.imageCopy = copy;
-      if (copy && this.closed) return this.dropCopies([copy]);
-      if (this.file?.path !== file.path || result?.code === BUSY) return;
-      const problem = copy ? null : `This file is no longer available: ${file.path}`;
-      if (problem !== this.problem || copy !== this.imageShown) {
-        this.problem = problem;
-        this.imageShown = copy;
-        cx.notify();
+      if (copy) {
+        this.imageCopies ??= new Set();
+        this.imageCopies.add(copy);
       }
+      if (!this.closed && this.file === file && result?.code !== BUSY) {
+        const problem = copy ? null : `This file is no longer available: ${file.path}`;
+        if (problem !== this.problem || copy !== this.imageShown) {
+          this.problem = problem;
+          this.imageShown = copy;
+          cx.notify();
+        }
+      }
+      const obsolete = [...(this.imageCopies ?? [])].filter(path => this.closed || path !== this.imageShown);
+      const batch = obsolete.slice(0, 32);
+      const deferred = obsolete.slice(32);
+      for (const path of batch) {
+        const removed = await this.dropCopies([path]);
+        this.imageCopies.delete(path);
+        if (!removed) {
+          if (this.closed) deferred.push(path);
+          else this.imageCopies.add(path);
+        }
+      }
+      this.queueCleanup(deferred);
+      for (const path of deferred) this.imageCopies.delete(path);
+      this.imageCopy = this.imageShown;
+      if (this.imageReading === file) this.imageReading = null;
+      if (this.closed) this.releaseCacheOwner();
+      if (!this.closed && this.file !== file && this.file && isImage(this.file.path)) this.readImage(cx);
     });
   },
 
@@ -477,6 +507,7 @@ export const viewerMethods = {
   // web is downloaded once per tab, and kept for a day under a name of its address, so every
   // tab shares it.
   readMarkdownImages(cx) {
+    if (this.closed) return;
     const file = this.file;
     if (!file || !isMarkdown(file.path) || this.text === undefined) return;
     this.markdownCopies ??= new Map();
@@ -501,14 +532,20 @@ export const viewerMethods = {
       }
       if (!this.markdownSlots.has(path)) this.markdownSlots.set(path, this.markdownSlots.size + 1);
       const start = `${this.viewerId}-m${this.markdownSlots.get(path)}`;
+      this.markdownLocalPending ??= new Set();
+      this.markdownLocalPending.add(path);
       cx.spawn(async (cx) => {
         const old = this.markdownCopies.get(path);
         const { program, args } = pickCopyImage(path, absolute(CACHE), start, extension(path), absolute(old), window()?.platform);
-        const result = await exec(program, args, {}).catch(() => null);
+        const result = await exec(program, args, { timeout: 10000 }).catch(() => null);
         this.markdownCopying.delete(path);
+        this.markdownLocalPending.delete(path);
         if (result?.code === BUSY) return;
         const copy = result?.code === 0 ? `${CACHE}/${result.stdout.trim()}` : null;
-        if (copy && this.closed) return this.dropCopies([copy]);
+        if (copy && this.closed) {
+          if (!(await this.dropCopies([copy]))) this.queueCleanup([copy]);
+          return;
+        }
         if (copy) this.markdownCopies.set(path, copy);
         if (this.markdownShown.get(path) !== Boolean(copy) || copy !== old) {
           this.markdownShown.set(path, Boolean(copy));
