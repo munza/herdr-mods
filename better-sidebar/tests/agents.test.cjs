@@ -218,6 +218,48 @@ test("priority and group by space keep working, and pinned agents stay on top", 
   assert.deepEqual(rows(mod.render(cx)).slice(0, 2), ["pinned", "ag-t5"]);
 });
 
+test("a done agent ranks as idle as soon as Herdr reports idle", () => {
+  const { mod } = agents("priority");
+  const agent = { address: "done-agent", status: "done" };
+  assert.equal(mod.rank(agent), 3);
+  agent.status = "idle";
+  assert.equal(mod.rank(agent), 1);
+});
+
+test("agents sharing a tab use their own live terminal titles", () => {
+  const { h, mod } = agents("grouped");
+  const first = h.live.agents[0];
+  const second = { ...first, address: "t7", title: "Second task" };
+  first.title = "First task";
+  h.live.agents = [first, second];
+  h.context.panes = () => [
+    { tab: "a", terminal: "t1", title: "First task", focused: true },
+  ];
+  const view = mod.readView();
+  assert.equal(view.label(first), "First task");
+  assert.equal(view.label(second), "Second task");
+});
+
+test("a kept sub-agent focuses its pane, while a parked one peeks", () => {
+  const { h, mod } = agents("grouped");
+  h.live.terminals = [
+    { address: "t1", state: "live", name: "parent" },
+    { address: "kid", parent: "t1", state: "live", name: "child" },
+  ];
+  h.live.agents.push({ address: "kid", status: "working", pane: "p-kid" });
+  mod.listed = new Map([["kid", "working"]]);
+  let row = mod.subRow(h.context.theme(), { t: h.live.terminals[1], lines: [] }, null, false);
+  row.handlers.click();
+  assert.equal(h.commands.at(-1).name, "pane.focus");
+  assert.equal(h.commands.at(-1).args.terminal, "kid");
+  h.live.agents = h.live.agents.filter((a) => a.address !== "kid");
+  mod.render(cx);
+  mod.listed = new Map();
+  row = mod.subRow(h.context.theme(), { t: h.live.terminals[1], lines: [] }, null, false);
+  row.handlers.click();
+  assert.equal(h.commands.at(-1).name, "terminal.peek");
+});
+
 test("without parents published, main space grouping falls back to each space", () => {
   const { mod, h } = agents("parent");
   delete h.live.shared["better-sidebar.space-parents"];

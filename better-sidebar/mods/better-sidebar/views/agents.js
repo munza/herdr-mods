@@ -1,6 +1,5 @@
 // Adapted from Herdr's shipped agents mod, with grouping by main space and by
 // name prefix. Agents in grouped or priority views; parents take their most urgent sub-agent's place.
-// A viewed done agent stays in Done until left.
 
 import { div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
@@ -48,7 +47,7 @@ const clean = (s) =>
     .replace(/^\[ [!.] \] /, "")
     .trim();
 
-function lead(tab, all = panes()) {
+function lead(tab, all) {
   const mine = all.filter((p) => p.tab === tab.id && p.terminal);
   return mine.find((p) => p.program?.agent) ?? mine.find((p) => p.focused) ?? mine[0];
 }
@@ -135,11 +134,14 @@ function icon(p, size, color) {
 }
 
 // What a row calls an agent: its tab's title, or failing that its own.
-function agentLabel() {
+function agentLabel(paneByTab = new Map(), tabCounts = new Map()) {
   const tabs = spaces().flatMap((s) => s.tabs);
   return (a) => {
     const tab = tabs.find((candidate) => candidate.id === a.tab);
-    return tab ? title(tab, lead(tab)) : a.title || a.program?.name || "";
+    if (!tab) return a.title || a.program?.name || "";
+    const pane = paneByTab.get(tab.id);
+    const many = tabCounts.get(tab.id) > 1;
+    return title(many ? { ...tab, named: false } : tab, many ? a : pane);
   };
 }
 
@@ -229,20 +231,8 @@ export class Agents {
     return this.changed[a.address]?.at ?? 0;
   }
 
-  // Looking at a done agent makes it idle; it stays with Done until you leave
-  // it rather than drop away under you. Any other change moves it at once.
-  hold(list) {
-    const cur = list.find((a) => a.focused);
-    const same = cur && cur.address === this.held?.address;
-    // Arriving, or any change but done turning idle, sets what it was.
-    if (!same || cur.status !== "idle")
-      this.held = cur ? { address: cur.address, rank: RANK[cur.status] ?? 0 } : null;
-  }
-
   rank(a) {
-    const sawDone =
-      a.address === this.held?.address && this.held.rank === RANK.done && a.status === "idle";
-    return sawDone ? RANK.done : (RANK[a.status] ?? 0);
+    return RANK[a.status] ?? 0;
   }
 
   // Sort menu for the lists view's tab bar.
@@ -320,7 +310,11 @@ export class Agents {
       .text_size(12.5)
       .when(on, (el) => el.bg(t.raised))
       .hover((s) => s.bg(t.hover))
-      .on_click(() => this.peek(k.address))
+      .on_click(() =>
+        this.listed.has(k.address)
+          ? run("pane.focus", { terminal: k.address })
+          : this.peek(k.address),
+      )
       .children(
         s.lines.map((l) =>
           div()
@@ -434,7 +428,6 @@ export class Agents {
     const unordered = agents();
     this.listed = new Map(unordered.map((a) => [a.address, a.status]));
     this.track(unordered, now);
-    this.hold(unordered);
     this.migratePins(all);
     // A kept sub-agent (one with a pane) is in agents() too: where a tree shows
     // it, it gets no row of its own, unless it's pinned.
@@ -447,7 +440,15 @@ export class Agents {
     const pinned = ordered.filter((a) => a.pinned);
     const unpinned = ordered.filter((a) => !a.pinned);
 
-    const label = agentLabel();
+    const allPanes = panes();
+    const paneByTab = new Map();
+    for (const tab of spaces().flatMap((s) => s.tabs)) {
+      const p = lead(tab, allPanes);
+      if (p) paneByTab.set(tab.id, p);
+    }
+    const tabCounts = new Map();
+    for (const a of shown) tabCounts.set(a.tab, (tabCounts.get(a.tab) ?? 0) + 1);
+    const label = agentLabel(paneByTab, tabCounts);
     const groupOf = grouping(sort.id, label);
     const rest = groupOf ? gatherGroups(unpinned, groupOf, sort.id) : unpinned;
     const list = [...pinned, ...rest];

@@ -1024,7 +1024,7 @@ export class Spaces {
       .when(Boolean(tree), (el) => el.when(!this.under, (e) => e.pl(22)).child(Icon("branch", 13).text_color(t.dim)))
       .when(!tree, (el) => el.child(this.avatar(w, t)))
       .child(
-        div().min_w(0).max_w(150).truncate().tooltip(w.name).text_color(t.foreground).child(w.name),
+        div().flex_initial().min_w(48).truncate().tooltip(w.name).text_color(t.foreground).child(w.name),
       )
       .child(this.branchName(g, w.name, t))
       .child(this.gitTail(g, w.active, t, w));
