@@ -92,7 +92,7 @@ GitHub Enterprise and GitLab aren't supported.
 | `list.page_size` | `25` | How many PRs load at a time (1–100). |
 | `list.default.tab` | `all` | Repo's first list until a saved view exists: `all`, `mine` (Created) or `involved`. |
 | `list.default.state` | `open` | Repo's first state filter until a saved view exists: `open`, `draft`, `merged`, `closed` or `all`. |
-| `worktrees.root` | `~/.herdr/worktrees` | Where New worktree puts checkouts. |
+| `worktrees.root` | `~/.herdr/worktrees` | Fallback folder when Herdr's `settings.json` has no `worktrees.directory`. |
 | `worktrees.open_with` | `terminal` | What a new worktree opens: `terminal`, or an installed agent's key such as `claude`. |
 | `logs.keep_last` | `60KB` | How much of a failed command's output is kept to show. |
 | `tools.github` | `gh` | The `gh` command, or its full path. |
@@ -108,6 +108,8 @@ The defaults as a `settings` block:
   "tools": { "github": "gh" }
 }
 ```
+
+New worktrees use `worktrees.directory` from `~/.config/herdr-app/settings.json` when set. It takes priority over the legacy `worktrees.root` mod setting. `~` expands on the space's machine. Worktree names support Unicode and are safely slugged for folder paths.
 
 ## Update
 

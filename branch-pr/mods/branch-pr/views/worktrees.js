@@ -3,6 +3,7 @@ import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run, theme } from "herdr";
 import { TEXT, Button, Row, TextButton, TextField } from "./ui.js";
+import { slug } from "../actions/worktrees.js";
 
 export const worktreeViewMethods = {
   worktreeRows(body) {
@@ -33,7 +34,7 @@ export const worktreeViewMethods = {
             else
               run("space.new", {
                 folder: worktree.path,
-                machine: this.sp?.machine ?? null,
+                machine: this.sp?.machine ?? "",
                 tab: worktree.name,
               });
             cx.notify();
@@ -66,7 +67,7 @@ export const worktreeViewMethods = {
     const current = choices.find((c) => c.key === form.launch) ?? choices[0];
     const location =
       form.path ??
-      `${this.settings.worktrees.root}/${form.repo.replace(/\//g, "-")}/${form.name.value().trim()}`;
+      `${form.root.replace(/\/+$/, "")}/${form.repo.replace(/\//g, "-")}/${slug(form.name.value().trim())}`;
     const box = v_flex()
       .id("pr-worktree-form")
       .flex_none()

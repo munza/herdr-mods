@@ -1,7 +1,54 @@
 // Checkouts of a PR: those that exist, and making a new one as a new space.
 import { InputState } from "gpui-base";
-import { spaces, exec, home, run, knownAgents } from "herdr";
+import { spaces, exec, home, appHome, readTextFile, run, knownAgents } from "herdr";
 import { repositoryFromRemote } from "../github/model.js";
+
+const DEFAULT_WORKTREE_ROOT = "~/.herdr/worktrees";
+const WORKTREE_TIMEOUT_MS = 600_000;
+
+// Match Herdr's worktree folder names, including names outside ASCII.
+export function slug(text) {
+  const normalized = text.normalize("NFC");
+  const name = normalized
+    .replace(/[^\p{L}\p{M}\p{N}._-]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+  if (name) return name;
+  let hash = 2166136261;
+  for (const char of normalized) hash = Math.imul(hash ^ char.codePointAt(0), 16777619);
+  return `branch-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+async function resolveUserHome(machine) {
+  if (!machine) return home();
+  let result;
+  try {
+    result = await exec("sh", ["-c", 'printf %s "$HOME"'], { on: machine });
+  } catch {}
+  if (!result || result.code !== 0 || !result.stdout?.trim())
+    result = await exec(
+      "powershell.exe",
+      ["-NoProfile", "-Command", "[Console]::Write($HOME)"],
+      { on: machine },
+    );
+  if (result.code !== 0 || !result.stdout?.trim())
+    throw new Error("Could not find the remote home folder.");
+  return result.stdout.trim().replace(/\\/g, "/");
+}
+
+async function worktreeRoot(user, fallback) {
+  const raw = await readTextFile(`${appHome()}/settings.json`);
+  const settings = raw === null ? {} : JSON.parse(raw);
+  const directory = settings?.worktrees?.directory ?? fallback ?? DEFAULT_WORKTREE_ROOT;
+  if (typeof directory !== "string" || !directory.trim())
+    throw new Error("worktrees.directory must be a non-empty path.");
+  let path = directory.replace(/\\/g, "/");
+  if (path === "~" || path.startsWith("~/"))
+    path = user.replace(/\\/g, "/").replace(/\/$/, "") + path.slice(1);
+  if (!path.startsWith("/") && !/^[A-Za-z]:\//.test(path))
+    throw new Error("worktrees.directory must be an absolute path or start with ~/.");
+  path = path.replace(/\/+$/, "");
+  return path || "/";
+}
 
 export const worktreeMethods = {
   worktreeKey() {
@@ -80,6 +127,7 @@ export const worktreeMethods = {
       name: InputState.new({ value: name }),
       launch: this.settings.worktrees.open_with, // terminal or an installed agent's program key
       agents: [],
+      root: this.settings.worktrees.root ?? DEFAULT_WORKTREE_ROOT,
     };
     this.worktreeForm = form;
     form.branch.on("change", (_e, cx) => cx.notify());
@@ -88,6 +136,14 @@ export const worktreeMethods = {
     form.name.on("submit", (_e, cx) => this.createWorktree(cx));
     form.branch.focus();
     cx.spawn(async (cx) => {
+      try {
+        form.root = await worktreeRoot(
+          await resolveUserHome(form.sp.machine),
+          this.settings.worktrees.root,
+        );
+      } catch (error) {
+        form.error = error.message;
+      }
       try {
         const agents = await knownAgents({ on: form.sp.machine ?? null });
         if (this.worktreeForm === form) form.agents = agents.filter((a) => a.installed);
@@ -108,8 +164,8 @@ export const worktreeMethods = {
     const branch = form.branch.value().trim();
     const name = form.name.value().trim();
     form.error = null;
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
-      form.error = "Use letters, numbers, dots, dashes or underscores for the worktree name.";
+    if (!name || !name.trim()) {
+      form.error = "Enter a worktree name.";
       cx.notify();
       return;
     }
@@ -150,21 +206,12 @@ export const worktreeMethods = {
           throw new Error("That branch already exists. Choose a new branch name.");
         if (existing.code !== 1)
           throw new Error(existing.stderr?.trim() || "Could not check existing branches.");
-        let userHome = home();
-        if (sp.machine) {
-          let result = await exec("sh", ["-c", 'printf %s "$HOME"'], { on: sp.machine });
-          if (result.code !== 0 || !result.stdout.trim())
-            result = await exec(
-              "powershell.exe",
-              ["-NoProfile", "-Command", "[Console]::Write($HOME)"],
-              { on: sp.machine },
-            );
-          if (result.code !== 0 || !result.stdout.trim())
-            throw new Error("Could not find the remote home folder.");
-          userHome = result.stdout.trim().replace(/\\/g, "/");
-        }
-        const root = this.settings.worktrees.root.replace(/^~(?=\/|$)/, userHome);
-        const path = `${root}/${repo.replace(/\//g, "-")}/${name}`;
+        const user = await resolveUserHome(sp.machine);
+        const root = await worktreeRoot(user, this.settings.worktrees.root);
+        form.root = root;
+        const folder = slug(name);
+        if (folder === "." || folder === "..") throw new Error("Choose a worktree name other than . or ..");
+        const path = `${root.replace(/\/+$/, "")}/${repo.replace(/\//g, "-")}/${folder}`;
         // Pin the checkout to a verified commit, not a moving PR branch. If
         // GitHub and FETCH_HEAD disagree, stop rather than open the wrong code.
         const latest = await this.api({ action: "detail", repo, number: pr.number }, sp);
@@ -173,7 +220,13 @@ export const worktreeMethods = {
         await git(["fetch", "--no-tags", "--", url, `refs/pull/${pr.number}/head`]);
         if ((await git(["rev-parse", "FETCH_HEAD"])) !== latest.headRefOid)
           throw new Error("The PR changed while fetching. Try again.");
-        await git(["worktree", "add", "-b", branch, "--", path, latest.headRefOid]);
+        const result = await exec(
+          "git",
+          ["worktree", "add", "-b", branch, "--", path, latest.headRefOid],
+          { cwd: sp.folder, on: sp.machine, timeout: WORKTREE_TIMEOUT_MS },
+        );
+        if (result.code !== 0)
+          throw new Error(result.stderr?.trim() || result.stdout?.trim() || "Git command failed.");
         // Retain the checkout if opening its terminal fails, so retry cannot create it twice.
         form.path = path;
         form.createdName = name;
@@ -195,7 +248,7 @@ export const worktreeMethods = {
     try {
       run("space.new", {
         folder: form.path,
-        machine: form.sp.machine ?? null,
+        machine: form.sp.machine ?? "",
         tab: form.createdName,
         ...(agent ? { argv: agent.run } : {}),
       });
