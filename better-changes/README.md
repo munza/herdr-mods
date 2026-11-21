@@ -44,7 +44,7 @@ It opens the panel, and selects it if it shares a stack such as Herdr's Files an
 - **+** and **−** on a row stage or unstage that file; **Stage all** and **Unstage all** act on the whole repository except conflicts. Working files on disk are never touched.
 - The **⋮** menu picks **Flat** or **Tree** for file lists, and **Inline** or **Side by side** for diffs.
 - Clicking a file opens its diff in one reusable centre tab per space, named after the file. It comes back to that file after a restart.
-- **Full file**, shown when you hover over the diff's header row, shows the whole file with its changes marked, instead of only the changed lines. It applies to every diff until you turn it off. A diff still stops at `limits.diff_lines`.
+- **Full file**, shown when you hover over the diff's header row, shows the whole file with its changes marked, instead of only the changed lines. It applies to every diff until you turn it off. Tabs in diff text expand to the next 4-column stop. A diff still stops at `limits.diff_lines`.
 - **Syntax colours** in diffs: keywords, strings, comments, numbers, constants, function calls, types, Vue/HTML/JSX tags and attributes, and JSON/YAML keys. A block comment or template string stays coloured on the lines after it. The sign and a tinted background mark added and removed lines.
 - **Commits** lists history, grouped by your branch and its remote, and opens any commit's description and changed files, with a link to GitHub for commits already pushed to an `origin` on GitHub.
 - A commit box with **Commit** and **Amend**.

@@ -107,6 +107,13 @@ export function fileTree(files, closed = new Set()) {
   return rows;
 }
 
+// Text draws a tab as nothing. Expand it to the next four-column stop.
+export function expandTabs(text) {
+  return text.replace(/[^\t]*\t/g, (part) =>
+    part.slice(0, -1).padEnd(part.length - 1 - ((part.length - 1) % 4) + 4),
+  );
+}
+
 /**
  * Attach old/new line numbers to unified diff lines. Hunk headers reset both
  * counters; metadata such as "No newline at end of file" consumes neither.
@@ -123,10 +130,10 @@ export function diffRows(lines) {
     }
 
     const kind = text[0];
-    if (kind === "-") return { kind, old: oldLine++, text: text.slice(1) };
-    if (kind === "+") return { kind, next: newLine++, text: text.slice(1) };
+    if (kind === "-") return { kind, old: oldLine++, text: expandTabs(text.slice(1)) };
+    if (kind === "+") return { kind, next: newLine++, text: expandTabs(text.slice(1)) };
     if (kind === " ") {
-      return { kind, old: oldLine++, next: newLine++, text: text.slice(1) };
+      return { kind, old: oldLine++, next: newLine++, text: expandTabs(text.slice(1)) };
     }
     return { kind: "", text };
   });

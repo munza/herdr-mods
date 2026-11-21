@@ -14,15 +14,29 @@ const strip = (source) =>
     .replace(/^export /gm, "");
 const read = (file) => strip(fs.readFileSync(`${dir}/${file}`, "utf8"));
 const MODEL_NAMES =
-  "conflictRows, changedFiles, fileTree, diffRows, splitDiffRows, parseLog, commitFiles, timeAgo, githubRepo";
+  "conflictRows, changedFiles, fileTree, expandTabs, diffRows, splitDiffRows, parseLog, commitFiles, timeAgo, githubRepo";
 const model = new Function(`${read("git/model.js")}; return { ${MODEL_NAMES} };`)();
 const { panelCommands } = new Function(`${read("panel.js")}; return { panelCommands };`)();
 const syntax = new Function(`${read("syntax.js")}; return { languageOf, syntaxColors, tokenizeLine, WHOLE_FILE_LINES };`)();
 
-function load(cwd, { props, saved, home = "/nonexistent", tree, calls = [] } = {}) {
+function load(cwd, { props, saved, home = "/nonexistent", tree, calls = [], local = {}, checking = false } = {}) {
   const store = new Map();
-  const memory = new Map(saved ? [["diff.selection", JSON.stringify(saved)]] : []);
+  const memory = new Map(Object.entries(local));
+  if (saved) memory.set("diff.selection", JSON.stringify(saved));
+  const watches = [];
+  const counts = { exec: 0, spawn: 0, timers: 0 };
   const never = () => new Promise(() => {});
+  const watch = (root) => {
+    let resolve;
+    const request = new Promise((done) => (resolve = done));
+    const entry = { root, cancelled: false };
+    request.cancel = () => {
+      entry.cancelled = true;
+      resolve();
+    };
+    watches.push(entry);
+    return request;
+  };
   const stub = new Proxy(() => stub, { get: () => stub, apply: () => stub });
   const env = {
     ...model,
@@ -30,6 +44,7 @@ function load(cwd, { props, saved, home = "/nonexistent", tree, calls = [] } = {
     panelCommands,
     closeOverlay: (id) => calls.push(["closeOverlay", id]),
     notify: ({ title }) => calls.push(["notify", title]),
+    checking: () => checking,
     View: class {},
     props: () => props ?? { source: { cwd, on: null } },
     appHome: () => home,
@@ -41,9 +56,10 @@ function load(cwd, { props, saved, home = "/nonexistent", tree, calls = [] } = {
     setShared: (key, value) => store.set(key, value),
     run: (name, args) => calls.push([name, args]),
     nextCommand: never,
-    watchFolder: never,
+    watchFolder: watch,
     readTextFile: async (file) => fs.readFileSync(file, "utf8"),
     exec: async (program, args, options) => {
+      counts.exec++;
       const r = spawnSync(program, args, { cwd: options.cwd, encoding: "utf8" });
       return { code: r.status, stdout: r.stdout, stderr: r.stderr };
     },
@@ -109,8 +125,14 @@ function load(cwd, { props, saved, home = "/nonexistent", tree, calls = [] } = {
   const cx = {
     notify() {},
     focus_handle: () => ({}),
-    timer: { every() {}, after: (ms, handler) => setTimeout(() => handler(cx), ms) },
+    timer: {
+      every() {
+        counts.timers++;
+      },
+      after: (ms, handler) => setTimeout(() => handler(cx), ms),
+    },
     spawn(fn) {
+      counts.spawn++;
       const p = fn(cx);
       pending.push(p);
       return p;
@@ -128,7 +150,7 @@ function load(cwd, { props, saved, home = "/nonexistent", tree, calls = [] } = {
     }
   };
   mod.init({}, cx);
-  return { mod, cx };
+  return { mod, cx, counts, watches };
 }
 
 function repo() {
@@ -259,6 +281,26 @@ test("the tree nests under folders and a closed folder hides its files", () => {
     ],
   );
   assert.equal(model.fileTree(files, new Set(["src"])).length, 2);
+});
+
+test("diff rows expand tabs to the next four-column stop", () => {
+  assert.equal(model.expandTabs("a\tb\t\tc"), "a   b       c");
+  assert.deepEqual(
+    model.diffRows(["@@ -1 +1 @@", " old\ttext", "-gone\tline", "+new\tline"]).map((row) => row.text),
+    ["@@ -1 +1 @@", "old text", "gone    line", "new line"],
+  );
+});
+
+test("full-file diff rows expand tabs too", async () => {
+  const { root } = repo();
+  fs.writeFileSync(`${root}/a.txt`, "new\tvalue\n");
+  const { mod, cx } = load(root);
+  await cx.settle();
+  mod.scope = "unstaged";
+  mod.shownFull = true;
+  const lines = await mod.readDiffLines(mod.files[0], "a.txt", root, null);
+  mod.showLines(lines);
+  assert.ok(mod.rows.some((row) => row.text === "new value"));
 });
 
 test("a commit link needs a GitHub origin", () => {
@@ -565,6 +607,40 @@ test("settings come from mod.json and a limit of zero falls back", async () => {
   assert.equal(mod.total, 2);
   assert.equal(mod.files.length, 1);
   assert.equal(mod.settings.limits.diff_lines, 1500);
+});
+
+test("damaged collapsed state defaults to no collapsed groups", async () => {
+  const { root } = repo();
+  for (const collapsed of ["{broken", "{}", '"not-a-list"']) {
+    const { mod, cx } = load(root, { local: { collapsed } });
+    await cx.settle();
+    assert.deepEqual([...mod.collapsed], []);
+  }
+});
+
+test("app checks start no Git reads, watches, settings tasks, or timers", () => {
+  const { root } = repo();
+  const { mod, counts, watches } = load(root, { checking: true });
+  assert.equal(mod.mode, "sidebar");
+  assert.deepEqual(counts, { exec: 0, spawn: 0, timers: 0 });
+  assert.deepEqual(watches, []);
+});
+
+test("repository changes and view close cancel the folder watch", async () => {
+  const { root } = repo();
+  const changed = load(root);
+  await changed.cx.settle();
+  const old = changed.watches.find((request) => request.root === root);
+  assert.ok(old);
+  changed.mod.startNewContext(JSON.stringify({ cwd: "/another-repo", on: null }));
+  assert.equal(old.cancelled, true);
+
+  const closing = load(root);
+  await closing.cx.settle();
+  const active = closing.watches.find((request) => request.root === root);
+  assert.ok(active);
+  closing.mod.close();
+  assert.equal(active.cancelled, true);
 });
 
 // The shape of Herdr's main layout, with the panel beside the tabs.
