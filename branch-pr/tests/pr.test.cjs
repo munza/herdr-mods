@@ -12,10 +12,10 @@ const source = FILES.map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
   .replace(/^import\s+[\s\S]*?;$/gm, '')
   .replace(/^export default (\w+);$/m, 'globalThis.Mod = $1;')
   .replace(/^export /gm, '')
-  + '\nObject.assign(globalThis, { authorsOf, repoUrl, who, agentName });';
+  + '\nObject.assign(globalThis, { authorsOf, repoUrl, who, agentName, slug });';
 
 function harness({ storage = new Map(), exec, hc, known = [], home = '/app' } = {}) {
-  const pending = [], timers = [], after = [], ran = [], sent = [], opened = [];
+  const pending = [], timers = [], after = [], ran = [], sent = [], opened = [], execCalls = [];
   const cx = { focus_handle: () => ({ focus() {} }), stop_propagation() {}, notify() {}, open_url: (u) => opened.push(u), write_to_clipboard() {}, spawn(fn) { pending.push(fn(cx)); }, timer: { every(_ms, fn) { timers.push(fn); }, after(_ms, fn) { after.push(fn); } } };
   function el() {
     const data = { nodes: [], handlers: {} };
@@ -45,7 +45,10 @@ function harness({ storage = new Map(), exec, hc, known = [], home = '/app' } = 
     TextView: { markdown: (_id, text) => el().child(text) },
     InputState: { new: state }, TextareaState: { new: state },
     spaces: () => live.spaces, panes: () => live.panes, agents: () => live.agents,
-    exec: exec ?? (async () => ({ code: 1, stdout: '', stderr: '' })),
+    exec: async (...args) => {
+      execCalls.push(args);
+      return exec ? exec(...args) : { code: 1, stdout: '', stderr: '' };
+    },
     hc: hc ?? (async (args) => { sent.push(args); return { code: 0, stdout: '', stderr: '' }; }),
     run: (name, args) => ran.push([name, args]),
     shared: (k) => live.shared[k], setShared: (k, v) => { live.shared[k] = v; },
@@ -62,7 +65,7 @@ function harness({ storage = new Map(), exec, hc, known = [], home = '/app' } = 
   mod.init({}, cx);
   pending.length = 0;
   mod.repo = 'owner/repo'; mod.sp = { id: 'space', folder: '/repo' }; mod.spaceKey = 'space'; mod.branchLoaded = true; mod.listLoaded = true;
-  return { mod, cx, live, storage, ran, sent, opened, context, tick: () => { for (const fn of timers) fn(cx); }, fireAfter: () => { for (const fn of after.splice(0)) fn(cx); }, flush: async () => { while (pending.length) await Promise.all(pending.splice(0)); } };
+  return { mod, cx, live, storage, ran, sent, opened, execCalls, context, tick: () => { for (const fn of timers) fn(cx); }, fireAfter: () => { for (const fn of after.splice(0)) fn(cx); }, flush: async () => { while (pending.length) await Promise.all(pending.splice(0)); } };
 }
 const same = (actual, expected) => assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected);
 const find = (node, id) => (node?.elementId === id ? node : node?.nodes?.map((n) => find(n, id)).find(Boolean));
@@ -960,7 +963,7 @@ test('a PR\'s worktrees are listed and a click switches to or opens their space'
   let tree = h.mod.render();
   assert.match(strings(find(tree, 'pr-worktree-row-0')), /PR-2\s+fix/);
   find(tree, 'pr-worktree-row-0').handlers.click({}, h.cx);
-  assert.equal(h.ran.at(-1)[0], 'space.new');
+  same(h.ran.at(-1), ['space.new', { folder: '/wt/PR-2', machine: '', tab: 'PR-2' }]);
   h.live.spaces = [{ id: 'wt', folder: '/wt/PR-2' }];
   tree = h.mod.render();
   find(tree, 'pr-worktree-row-0').handlers.click({}, h.cx);
@@ -973,7 +976,7 @@ test('a new worktree fetches the verified head and opens as a space', async () =
   const exec = async (bin, args) => {
     const line = `${bin} ${args.join(' ')}`;
     log.push(line);
-    if (line.includes('check-ref-format')) return { code: 0, stdout: 'fix\n' };
+    if (line.includes('check-ref-format')) return { code: 0, stdout: `${args.at(-1)}\n` };
     if (line.includes('remote get-url')) return { code: 0, stdout: 'git@github.com:owner/repo.git\n' };
     if (line.endsWith('git remote')) return { code: 0, stdout: 'origin\n' };
     if (line.includes('show-ref')) return { code: 1, stdout: '' };
@@ -982,25 +985,28 @@ test('a new worktree fetches the verified head and opens as a space', async () =
     return { code: 0, stdout: '' };
   };
   const h = harness({ exec });
-  h.mod.pr = PR({ headRefOid: head });
-  h.mod.api = async () => PR({ headRefOid: head });
+  h.mod.pr = PR({ headRefOid: head, headRefName: 'fix/你好' });
+  h.mod.api = async () => PR({ headRefOid: head, headRefName: 'fix/你好' });
   h.mod.showWorktree(h.cx); await h.flush();
-  assert.equal(h.mod.worktreeForm.branch.value(), 'fix');
+  assert.equal(h.mod.worktreeForm.branch.value(), 'fix/你好');
   assert.equal(h.mod.worktreeForm.name.value(), 'PR-2');
   click(h.mod.render(), 'pr-worktree-submit', h); await h.flush();
   assert.ok(log.some((l) => l.includes('fetch --no-tags -- git@github.com:owner/repo.git refs/pull/2/head')));
-  assert.ok(log.some((l) => l.includes(`worktree add -b fix -- /home/sam/.herdr/worktrees/owner-repo/PR-2 ${head}`)));
-  assert.ok(log.some((l) => l.includes('config branch.fix.herdr-pr owner/repo#2')));
+  assert.ok(log.some((l) => l.includes(`worktree add -b fix/你好 -- /home/sam/.herdr/worktrees/owner-repo/PR-2 ${head}`)));
+  assert.ok(log.some((l) => l.includes('config branch.fix/你好.herdr-pr owner/repo#2')));
+  const add = h.execCalls.find(([, args]) => args[0] === 'worktree' && args[1] === 'add');
+  assert.equal(add[2].timeout, 600_000);
   assert.equal(h.ran.at(-1)[0], 'space.new');
+  assert.equal(h.ran.at(-1)[1].machine, '');
   assert.equal(h.mod.worktreeForm, null);
 });
 
-test('a worktree name with a path in it is refused, and a moved PR stops the checkout', async () => {
+test('a blank worktree name is refused, and a moved PR stops the checkout', async () => {
   const log = [];
   const exec = async (bin, args) => {
     const line = `${bin} ${args.join(' ')}`;
     log.push(line);
-    if (line.includes('check-ref-format')) return { code: 0, stdout: 'fix\n' };
+    if (line.includes('check-ref-format')) return { code: 0, stdout: `${args.at(-1)}\n` };
     if (line.includes('remote get-url')) return { code: 0, stdout: 'git@github.com:owner/repo.git\n' };
     if (line.endsWith('git remote')) return { code: 0, stdout: 'origin\n' };
     if (line.includes('show-ref')) return { code: 1, stdout: '' };
@@ -1010,14 +1016,56 @@ test('a worktree name with a path in it is refused, and a moved PR stops the che
   const h = harness({ exec });
   h.mod.pr = PR();
   h.mod.showWorktree(h.cx); await h.flush();
-  h.mod.worktreeForm.name.set_value('../evil');
+  h.mod.worktreeForm.name.set_value('');
   h.mod.createWorktree(h.cx); await h.flush();
-  assert.match(h.mod.worktreeForm.error, /letters, numbers/);
+  assert.match(h.mod.worktreeForm.error, /Enter a worktree name/);
   h.mod.worktreeForm.name.set_value('PR-2');
   h.mod.api = async () => PR({ headRefOid: 'a'.repeat(40) });
   h.mod.createWorktree(h.cx); await h.flush();
   assert.match(h.mod.worktreeForm.error, /changed while fetching/);
   assert.equal(log.some((l) => l.includes('worktree add')), false);
+});
+
+test('worktree folder slugs keep Unicode and give symbol-only names stable unique paths', () => {
+  const slug = harness().context.slug;
+  assert.equal(slug('fix/你好'), 'fix-你好');
+  assert.equal(slug('e\u0301'), slug('é'));
+  assert.match(slug('🔥'), /^branch-[0-9a-f]{8}$/);
+  assert.notEqual(slug('🔥'), slug('✨'));
+});
+
+test('a custom Herdr worktree folder and symbol-only names make a safe path', async () => {
+  const home = fs.mkdtempSync(path.join(require('os').tmpdir(), 'branch-pr-settings-'));
+  fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ worktrees: { directory: '~/Developer/trees' } }));
+  const head = 'c'.repeat(40);
+  const log = [];
+  const exec = async (bin, args) => {
+    const line = `${bin} ${args.join(' ')}`;
+    log.push(line);
+    if (line.includes('check-ref-format')) return { code: 0, stdout: `${args.at(-1)}\n` };
+    if (line.includes('remote get-url')) return { code: 0, stdout: 'git@github.com:owner/repo.git\n' };
+    if (line.endsWith('git remote')) return { code: 0, stdout: 'origin\n' };
+    if (line.includes('show-ref')) return { code: 1, stdout: '' };
+    if (line.includes('rev-parse')) return { code: 0, stdout: `${head}\n` };
+    if (line.includes('--get-regexp') || line.includes('worktree list')) return { code: 1, stdout: '' };
+    return { code: 0, stdout: '' };
+  };
+  try {
+    const h = harness({ exec, home });
+    h.mod.pr = PR({ headRefOid: head, headRefName: '修复/你好' });
+    h.mod.api = async () => PR({ headRefOid: head, headRefName: '修复/你好' });
+    h.mod.showWorktree(h.cx);
+    await h.flush();
+    h.mod.worktreeForm.name.set_value('🔥');
+    h.mod.createWorktree(h.cx);
+    await h.flush();
+    const folder = h.context.slug('🔥');
+    assert.ok(log.some((line) => line.includes(
+      `worktree add -b 修复/你好 -- /home/sam/Developer/trees/owner-repo/${folder} ${head}`,
+    )));
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
 });
 
 // A file's diff opens in Better Changes' centre tab; Branch PR has none of its own.
@@ -1149,4 +1197,3 @@ test("on a light theme, the Files tab takes Better Icons' light pictures", async
   tree = h.mod.render();
   assert.match(strings(find(tree, 'pr-folder-.cursor')), /image:mods\/better-icons\/icons\/folder-cursor_light\.svg/, 'a closed folder takes its light picture');
 });
-
