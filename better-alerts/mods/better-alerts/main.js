@@ -4,7 +4,7 @@
 // HerdrAlerts.app, or osascript until that's built. It draws nothing, so a layout runs it as an
 // empty floating block, and it never runs a program from render.
 import { View, div } from "gpui-kit";
-import { agents, appHome, exec, focused, hc, terminals, window } from "herdr";
+import { agents, appHome, checking, exec, focused, hc, setBadge, terminals, window } from "herdr";
 import { loadSettings } from "./settings.js";
 import { alert, escapeMarkup } from "./words.js";
 
@@ -48,11 +48,14 @@ function looking(agent) {
 
 class BetterAlerts extends View {
   init(_props, cx) {
+    if (checking()) return;
     this.settings = DEFAULT_SETTINGS;
-    this.seen = new Map(agents().map((a) => [a.address, a.status]));
     this.warned = false;
     this.platform = window()?.platform;
     if (this.platform !== "linux" && this.platform !== "macos") return;
+    const current = agents();
+    this.seen = new Map(current.map((a) => [a.address, a.status]));
+    this.updateBadge(current, new Set(terminals().filter((t) => t?.parent).map((t) => t.address)));
     this.helper = `${appHome()}/mods/better-alerts/bin/HerdrAlerts.app`;
     cx.spawn(async (cx) => {
       const { settings, problems } = await loadSettings("better-alerts", DEFAULT_SETTINGS);
@@ -67,9 +70,11 @@ class BetterAlerts extends View {
   // first one. Agents already there when it starts count as seen, and a sub-agent posts
   // nothing, since its parent speaks for it.
   check() {
-    const live = new Set();
+    const current = agents();
     const subAgents = new Set(terminals().filter((t) => t?.parent).map((t) => t.address));
-    for (const a of agents()) {
+    this.updateBadge(current, subAgents);
+    const live = new Set();
+    for (const a of current) {
       live.add(a.address);
       const before = this.seen.get(a.address);
       this.seen.set(a.address, a.status);
@@ -80,6 +85,15 @@ class BetterAlerts extends View {
       this.post(a);
     }
     for (const address of this.seen.keys()) if (!live.has(address)) this.seen.delete(address);
+  }
+
+  updateBadge(current, subAgents) {
+    if (this.platform !== "macos") return;
+    const blocked = current.filter((a) => a.status === "blocked" && !subAgents.has(a.address)).length;
+    const badge = blocked ? String(blocked) : null;
+    if (badge === this.badge) return;
+    this.badge = badge;
+    setBadge(badge);
   }
 
   // The agent's screen and recent history, or nothing when it can't be read.

@@ -16,12 +16,15 @@ On macOS, the tab is the subtitle and the message the body, and alerts from one 
 
 ## How it behaves
 
+`checking()` is true when Herdr loads the mod to check it. In that mode `init()` returns before reading settings, starting the timer, or setting a badge.
+
 Every 500ms, from `cx.timer.every`, never from render, it compares each agent's status in `agents()` with the last look, kept by address:
 
 - To `blocked`: post `NEEDS YOU`.
 - To `done`: post `DONE` only if it was `working` or `blocked` before, and the person isn't looking: Herdr's `window().active` is false, or `focused().tab` isn't the agent's tab.
 - No change, any other status, a sub-agent (a terminal in `terminals()` with a `parent`), or a kind turned off in the settings: nothing.
 - Agents present when the mod starts count as seen. A new agent posts on its first status if that's `blocked`. An agent that leaves is forgotten.
+- On macOS, the Dock badge counts blocked agents except sub-agents, and clears when none remain.
 
 To post, it reads the agent with `hc read <address> --lines 80` (a failed read is an empty screen), and `words.js` turns agent and screen into the words, after stripping ANSI codes:
 
@@ -37,6 +40,8 @@ macOS runs a script with `<appHome>/mods/better-alerts/bin/HerdrAlerts.app`, the
 A failed `exec` is logged once. On any platform but `linux` and `macos` (`window().platform`), it starts no timer and does nothing.
 
 ## Built from
+
+Built and tested against Herdr 0.1.16.
 
 `mods/better-alerts/`: `main.js`, `words.js` (what a notification says; no Herdr calls), `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Better Alerts), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match: `alerts.blocked` and `alerts.done`, both true). It uses `agents`, `terminals`, `focused`, `window`, `appHome`, `exec` and `hc` from `herdr`, and `div` from gpui-kit. Install it as a root `floating` block, `{ "id": "better-alerts", "content": { "mod": "better-alerts" }, "edge": "bottom", "align": "end" }`, in a layout the person owns.
 
