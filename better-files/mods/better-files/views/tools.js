@@ -28,6 +28,9 @@ export const toolMethods = {
   // A marker in a folder that closes moves to the folder at the top.
   collapseAll(cx) {
     this.folders.clear();
+    for (const path of this.entries.keys()) if (path) this.entries.delete(path);
+    for (const path of this.folderLists.keys()) if (path) this.folderLists.delete(path);
+    this.allocateEntries();
     if (this.cursor?.includes("/")) this.cursor = foldersTo(this.cursor, false)[0];
     cx.notify();
   },

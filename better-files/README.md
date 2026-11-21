@@ -78,7 +78,7 @@ Editing, and creating, renaming or deleting files, aren't here on purpose: that'
 
 A folder lists its first 500 entries, and the tree shows 5,000 rows. The filter shows 200 matches and searches up to 40,000 files; outside a Git repository it goes 12 folders deep (5 in a home folder or `/`) and skips `.git`, `node_modules`, `.venv`, `__pycache__`, `target`, `dist` and `.next`. A file view can't report a selection or jump to a line, because Herdr's editor component offers neither, so you send whole files and an editor opens at the top.
 
-Listing a folder needs `sh`. On a Windows computer, its own folders are listed with PowerShell instead, editors are found by their program rather than through Spotlight, and Explorer takes Finder's place; a Windows space on another machine still needs `sh`, and shows an error without it.
+Listing a folder needs `sh`. On a Windows computer, its own folders are listed with PowerShell instead, editors are found by their program rather than through Spotlight, and Explorer takes Finder's place. A Windows space on another machine falls back to PowerShell when `sh` is unavailable, including when the filter searches outside Git.
 
 ## Settings
 

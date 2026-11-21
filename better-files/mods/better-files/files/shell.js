@@ -3,7 +3,7 @@
 // PowerShell 5.1 with the `& { … } '<arg>'` scriptblock wrapper (required on 5.1
 // because bare trailing -Command args are appended to the command text).
 
-export const psQuote = (s) => "'" + String(s).replace(/'/g, "''") + "'";
+export const psQuote = (s) => "'" + String(s).replace(/['‘’‚‛]/g, "$&$&") + "'";
 
 const isWin = (platform) => platform === "windows";
 
@@ -16,7 +16,7 @@ function listingSh(perFolder) {
 }
 
 function listingPs(perFolder) {
-  return `[Console]::OutputEncoding=[Text.Encoding]::UTF8; $p=$args[0]; if (-not (Test-Path -LiteralPath $p -PathType Container)) { [Console]::Error.WriteLine('Cannot list this folder.'); exit 1 }; Get-ChildItem -LiteralPath $p -Force | Where-Object { $_.Name -ne '.git' } | Select-Object -First ${perFolder + 1} | ForEach-Object { $k=if ($_.PSIsContainer) {'d'} else {'f'}; [Console]::Out.Write($k + [char]0 + $_.Name + [char]0) }`;
+  return `[Console]::OutputEncoding=[Text.Encoding]::UTF8; $p=$args[0]; if (-not (Test-Path -LiteralPath $p -PathType Container)) { [Console]::Error.WriteLine('Cannot list this folder.'); exit 1 }; Get-ChildItem -LiteralPath $p -Force -ErrorAction Stop | Where-Object { $_.Name -ne '.git' } | Select-Object -First ${perFolder + 1} | ForEach-Object { $dir=($_.PSIsContainer -and (-not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $_.LinkType -or ($_.Target -and [IO.Directory]::Exists(([IO.Path]::Combine([IO.Path]::GetDirectoryName($_.FullName), $_.Target[0])))))); $k=if ($dir) {'d'} else {'f'}; [Console]::Out.Write($k + [char]0 + $_.Name + [char]0) }`;
 }
 
 export function pickListing(path, perFolder, platform) {
@@ -30,6 +30,42 @@ export function pickListing(path, perFolder, platform) {
     program: "sh",
     args: ["-c", listingSh(perFolder), "files", path],
   };
+}
+
+// The cleanup sweep's own contract, which differs from the tree listing above: a missing cache
+// folder is an empty, successful listing, because the sweep must be able to finish; a path that
+// exists but cannot be listed is still an error, so a real fault never clears the warning.
+export function pickCleanupListing(path, offset, platform) {
+  if (isWin(platform)) {
+    const script = `[Console]::OutputEncoding=[Text.Encoding]::UTF8; $p=$args[0]; $skip=[int]$args[1]; if (-not (Test-Path -LiteralPath $p -PathType Container)) { if (Test-Path -LiteralPath $p) { [Console]::Error.WriteLine('The cache folder is not a folder.'); exit 1 }; exit 0 }; Get-ChildItem -LiteralPath $p -Force -ErrorAction Stop | Sort-Object Name | Select-Object -Skip $skip -First 501 | ForEach-Object { $k=if ($_.PSIsContainer) {'d'} else {'f'}; [Console]::Out.Write($k+[char]0+$_.Name+[char]0) }`;
+    return { program: "powershell.exe", args: ["-NoProfile", "-NoLogo", "-Command", `& { ${script} } ${psQuote(path)} ${psQuote(offset)}`] };
+  }
+  const script = 'n=0; for p in "$1"/* "$1"/.[!.]* "$1"/..?*; do [ -e "$p" ] || [ -L "$p" ] || continue; n=$((n+1)); [ "$n" -le "$2" ] && continue; [ "$n" -gt $(($2+501)) ] && break; if [ -d "$p" ]; then k=d; else k=f; fi; printf "%s\\0%s\\0" "$k" "${p##*/}"; done; [ -d "$1" ] || [ ! -e "$1" ]';
+  return { program: "sh", args: ["-c", script, "cleanup-list", path, String(offset)] };
+}
+
+export function pickIndex(root, depth, bytes) {
+  const script = `[Console]::OutputEncoding=[Text.Encoding]::UTF8
+$root=$args[0]; $maxDepth=[int]$args[1]; $maxBytes=[int]$args[2]
+$skip=@('.git','node_modules','.venv','__pycache__','target','dist','.next')
+$stack=New-Object 'System.Collections.Generic.Stack[object]'
+$stack.Push(@($root,'',0)); $size=0
+while ($stack.Count -gt 0) {
+  $item=$stack.Pop(); $dir=$item[0]; $prefix=$item[1]; $level=[int]$item[2]
+  try { $children=@(Get-ChildItem -LiteralPath $dir -Force -ErrorAction Stop) }
+  catch { if ($level -eq 0) { throw }; continue }
+  foreach ($entry in $children) {
+    $rel=if ($prefix) { $prefix+'/'+$entry.Name } else { $entry.Name }
+    if ($entry.PSIsContainer) {
+      if ($level+1 -lt $maxDepth -and $entry.Name -notin $skip -and -not ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint)) { $stack.Push(@($entry.FullName,$rel,($level+1))) }
+    } else {
+      $length=[Text.Encoding]::UTF8.GetByteCount($rel)+1
+      if ($size+$length -gt $maxBytes) { [Console]::Out.Write('!'); exit 0 }
+      [Console]::Out.Write($rel+[char]0); $size += $length
+    }
+  }
+}`;
+  return { program: "powershell.exe", args: ["-NoProfile", "-NoLogo", "-Command", `& { ${script} } ${[root, depth, bytes].map(psQuote).join(" ")}`] };
 }
 
 // --- Image copy (viewer + markdown) ---
@@ -52,8 +88,10 @@ if [ ! -e "$copy" ]; then
   [ "$(cksum < "$copy.part")" = "$sum" ] || exit ${BUSY}
   mv -f -- "$copy.part" "$copy" || exit 1
 fi
-if [ -n "$5" ]; then set -- "$5"; else set -- "$2/$3"-[0-9]*; fi
-for old in "$@"; do [ "$old" = "$copy" ] || [ ! -e "$old" ] || rm -f -- "$old"; done
+if [ "$6" != retain ]; then
+  if [ -n "$5" ]; then set -- "$5"; else set -- "$2/$3"-[0-9]*; fi
+  for old in "$@"; do [ "$old" = "$copy" ] || [ ! -e "$old" ] || rm -f -- "$old"; done
+fi
 printf %s "$name"`;
 
 // The same contract in PowerShell 5.1: the name is a SHA-256 prefix and the size, and the
@@ -71,26 +109,28 @@ if (-not (Test-Path -LiteralPath $copy)) {
     Move-Item -LiteralPath $part -Destination $copy -Force -ErrorAction Stop
   } finally { Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue }
 }
-$pattern='^' + [regex]::Escape($start) + '-[0-9a-f]{16}-[0-9]+\\.'
-$olds=if ($old) { @($old) } else { @(Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match $pattern } | ForEach-Object { $_.FullName }) }
-foreach ($o in $olds) { if ((Split-Path -Leaf $o) -ne $name -and (Test-Path -LiteralPath $o)) { Remove-Item -LiteralPath $o -Force -ErrorAction SilentlyContinue } }
+if ($args[5] -ne 'retain') {
+  $pattern='^' + [regex]::Escape($start) + '-[0-9a-f]{16}-[0-9]+\\.'
+  $olds=if ($old) { @($old) } else { @(Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match $pattern } | ForEach-Object { $_.FullName }) }
+  foreach ($o in $olds) { if ((Split-Path -Leaf $o) -ne $name -and (Test-Path -LiteralPath $o)) { Remove-Item -LiteralPath $o -Force -ErrorAction SilentlyContinue } }
+}
 [Console]::Out.Write($name); exit 0
 } catch { exit 1 }`;
 
-export function pickCopyImage(src, cacheDir, start, ext, old, platform) {
+export function pickCopyImage(src, cacheDir, start, ext, old, platform, retain = false) {
   if (isWin(platform)) {
     return {
       program: "powershell.exe",
-      args: ["-NoProfile", "-NoLogo", "-Command", `& { ${COPY_IMAGE_PS} } ${[src, cacheDir, start, ext, old].map(psQuote).join(" ")}`],
+      args: ["-NoProfile", "-NoLogo", "-Command", `& { ${COPY_IMAGE_PS} } ${[src, cacheDir, start, ext, old, ...(retain ? ["retain"] : [])].map(psQuote).join(" ")}`],
     };
   }
-  return { program: "sh", args: ["-c", COPY_IMAGE, "copy-image", src, cacheDir, start, ext, old] };
+  return { program: "sh", args: ["-c", COPY_IMAGE, "copy-image", src, cacheDir, start, ext, old, ...(retain ? ["retain"] : [])] };
 }
 
 // --- Cache cleanup on tab close ---
-// Wire contract (both): always exit 0; missing paths are harmless.
+// Missing paths are harmless, but a failed removal must be reported for retry.
 
-const RM_PS = `try{foreach($p in $args){Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}}catch{};exit 0`;
+const RM_PS = `$failed=$false;foreach($p in $args){try{if(Test-Path -LiteralPath $p -ErrorAction Stop){Remove-Item -LiteralPath $p -Force -ErrorAction Stop}}catch{$failed=$true;[Console]::Error.WriteLine($_)}};if($failed){exit 1};exit 0`;
 
 export function pickRm(paths, platform) {
   if (isWin(platform)) {
