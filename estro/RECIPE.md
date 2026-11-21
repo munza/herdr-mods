@@ -43,6 +43,8 @@ Then `herdr-app check` each mod and `layout.switch {"name": "estro"}`.
 
 ## Built from
 
+Built and tested against Herdr 0.1.16.
+
 `layouts/estro.json`, with `cloned_from` Herdr's `main`, and `mods/`, a one-line pointer for each of `better-files`, `better-sidebar`, `better-tabs`, `better-changes`, `better-config`, `branch-pr` and `branch-issue`. `workspace-chrome` and `workspace-status` ship with Herdr. Each mod's own `RECIPE.md` in [munza/herdr-mods](https://github.com/munza/herdr-mods) is the brief for that mod.
 
 ## Watch out
