@@ -31,6 +31,8 @@ A mod that uses the pack keeps an identical copy of `file-icons.js`, calls `foll
 
 ## Built from
 
+Built and tested against Herdr 0.1.16.
+
 `mods/better-icons/`: `main.js` (the sample list), `file-icons.js`, `icons.json`, `icons/` (1,184 SVGs), `LICENSE-material-icon-theme.txt`, `mod.json` (`place: none`, title Better Icons, no settings), `mod.schema.json`. Beside it: `generate.mjs`, `tests/icons.test.cjs`, `sync.sh`. It imports `View`, `div`, `image`, `h_flex`, `v_flex`, and from Herdr `appHome`, `readTextFile`, `settings`, `theme`. It runs no programs and makes no network calls.
 
 ## Watch out
