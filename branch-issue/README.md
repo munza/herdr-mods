@@ -91,7 +91,7 @@ A visible panel rereads Linear on a timer. A hidden panel doesn't refresh, and c
 | `list.default.scope` | `mine` | The list's first scope until a saved view exists: `mine`, `cycle` or `all`. |
 | `list.default.state` | `active` | The first state filter until a saved view exists: `active`, `backlog`, `started`, `done`, `cancelled` or `all`. |
 | `list.default.team` | `""` | A team key to filter by at first, such as DEM. Empty shows every team. |
-| `worktrees.root` | `~/.herdr/worktrees` | Where Create worktree puts new checkouts. |
+| `worktrees.root` | `~/.herdr/worktrees` | Fallback folder when Herdr's `settings.json` has no `worktrees.directory`. |
 | `worktrees.open_with` | `terminal` | What a new worktree opens: `terminal`, or an installed agent's key such as `claude`. |
 | `worktrees.move_to_started` | `false` | Preselect moving the issue to its started state when you create a worktree. |
 
@@ -105,6 +105,8 @@ The defaults as a `settings` block:
   "worktrees": { "root": "~/.herdr/worktrees", "open_with": "terminal", "move_to_started": false }
 }
 ```
+
+New worktrees use `worktrees.directory` from Herdr's `settings.json` when set. It takes priority over the legacy `worktrees.root` mod setting. `~` expands on the space's machine. Worktree names support Unicode and are safely slugged for folder paths.
 
 ## Update
 

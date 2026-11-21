@@ -1,9 +1,26 @@
 // Starting work on an issue: its checkouts, and making a new one as a new space.
 import { InputState } from "gpui-base";
-import { spaces, exec, home, run, knownAgents } from "herdr";
+import { spaces, exec, home, appHome, readTextFile, run, knownAgents } from "herdr";
 import { folderName, identifiersIn, issuePrompt, slug } from "../linear/model.js";
 
 const BRANCH_LIMIT = 100;
+const DEFAULT_WORKTREE_ROOT = "~/.herdr/worktrees";
+const WORKTREE_TIMEOUT_MS = 600_000;
+
+async function worktreeRoot(user, fallback) {
+  const raw = await readTextFile(`${appHome()}/settings.json`);
+  const settings = raw === null ? {} : JSON.parse(raw);
+  const directory = settings?.worktrees?.directory ?? fallback ?? DEFAULT_WORKTREE_ROOT;
+  if (typeof directory !== "string" || !directory.trim())
+    throw new Error("worktrees.directory must be a non-empty path.");
+  let path = directory.replace(/\\/g, "/");
+  if (path === "~" || path.startsWith("~/"))
+    path = user.replace(/\\/g, "/").replace(/\/$/, "") + path.slice(1);
+  if (!path.startsWith("/") && !/^[A-Za-z]:\//.test(path))
+    throw new Error("worktrees.directory must be an absolute path or start with ~/.");
+  path = path.replace(/\/+$/, "");
+  return path || "/";
+}
 
 export const worktreeMethods = {
   // Worktrees already checked out for this issue: branches whose
@@ -80,6 +97,17 @@ export const worktreeMethods = {
     for (const input of [form.branch, form.name])
       input.on("submit", (_e, cx) => this.createWorktree(cx));
     form.branch.focus();
+    cx.spawn(async (cx) => {
+      try {
+        form.root = await worktreeRoot(
+          await this.homeOf(form.sp),
+          this.settings.worktrees.root,
+        );
+      } catch (error) {
+        form.error = error.message;
+      }
+      cx.notify();
+    });
     // The base defaults to the remote's HEAD; the launch choices to what is installed.
     cx.spawn(async (cx) => {
       try {
@@ -135,8 +163,8 @@ export const worktreeMethods = {
     const name = form.name.value().trim();
     const base = form.base;
     form.error = null;
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
-      form.error = "Use letters, numbers, dots, dashes or underscores for the worktree name.";
+    if (!name) {
+      form.error = "Enter a worktree name.";
       cx.notify();
       return;
     }
@@ -162,10 +190,21 @@ export const worktreeMethods = {
           throw new Error("That branch already exists. Choose a new branch name.");
         if (existing.code !== 1)
           throw new Error(existing.stderr?.trim() || "Could not check existing branches.");
-        const root = this.settings.worktrees.root.replace(/^~(?=\/|$)/, await this.homeOf(sp));
-        const path = `${root}/${folderName(sp.folder)}/${name}`;
+        const user = await this.homeOf(sp);
+        const root = await worktreeRoot(user, this.settings.worktrees.root);
+        form.root = root;
+        const folder = slug(name);
+        if (folder === "." || folder === "..")
+          throw new Error("Choose a worktree name other than . or ..");
+        const path = `${root.replace(/\/+$/, "")}/${folderName(sp.folder)}/${folder}`;
         const start = await this.worktreeStart(base, sp);
-        await git(["worktree", "add", "-b", branch, "--", path, start]);
+        const added = await exec(
+          "git",
+          ["worktree", "add", "-b", branch, "--", path, start],
+          { cwd: sp.folder, on: sp.machine, timeout: WORKTREE_TIMEOUT_MS },
+        );
+        if (added.code !== 0)
+          throw new Error(added.stderr?.trim() || added.stdout?.trim() || "Git command failed.");
         // Retain the checkout if opening its space fails, so retry cannot create it twice.
         form.path = path;
         form.createdName = name;
@@ -223,7 +262,7 @@ export const worktreeMethods = {
     try {
       run("space.new", {
         folder: form.path,
-        machine: form.sp.machine ?? null,
+        machine: form.sp.machine ?? "",
         tab: form.createdName,
         ...(agent ? { argv: [...agent.run, issuePrompt(form.issue)] } : {}),
       });

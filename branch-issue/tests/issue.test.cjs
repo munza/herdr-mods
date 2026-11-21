@@ -14,8 +14,8 @@ const source = FILES.map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
   .replace(/^export /gm, '')
   + '\nObject.assign(globalThis, { person, who, agentName, slug, folderName });';
 
-function harness({ storage = new Map(), exec, hc, known = [] } = {}) {
-  const pending = [], timers = [], after = [], ran = [], sent = [], opened = [];
+function harness({ storage = new Map(), exec, hc, known = [], appHome = '/app' } = {}) {
+  const pending = [], timers = [], after = [], ran = [], sent = [], opened = [], execCalls = [];
   const cx = { focus_handle: () => ({ focus() {} }), stop_propagation() {}, notify() {}, open_url: (u) => opened.push(u), write_to_clipboard() {}, spawn(fn) { pending.push(fn(cx)); }, timer: { every(_ms, fn) { timers.push(fn); }, after(_ms, fn) { after.push(fn); } } };
   function el() {
     const data = { nodes: [], handlers: {} };
@@ -45,11 +45,15 @@ function harness({ storage = new Map(), exec, hc, known = [] } = {}) {
     TextView: { markdown: (_id, text) => el().child(text) },
     InputState: { new: state }, TextareaState: { new: state },
     spaces: () => live.spaces, panes: () => live.panes, agents: () => live.agents,
-    exec: exec ?? (async () => ({ code: 1, stdout: '', stderr: '' })),
+    exec: async (...args) => {
+      execCalls.push(args);
+      return exec ? exec(...args) : { code: 1, stdout: '', stderr: '' };
+    },
     hc: hc ?? (async (args) => { sent.push(args); return { code: 0, stdout: '', stderr: '' }; }),
     run: (name, args) => ran.push([name, args]),
-    home: () => '/home/sam', appHome: () => '/app', theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
-    layout: () => live.layout, settings: () => ({ font_family: 'Code' }), readTextFile: async () => null,
+    home: () => '/home/sam', appHome: () => appHome, theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
+    layout: () => live.layout, settings: () => ({ font_family: 'Code' }),
+    readTextFile: async (file) => appHome === '/app' || !fs.existsSync(file) ? null : fs.readFileSync(file, 'utf8'),
     nextCommand: () => new Promise(() => {}), knownAgents: async () => known,
     localStorage: { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) },
     console,
@@ -60,7 +64,7 @@ function harness({ storage = new Map(), exec, hc, known = [] } = {}) {
   mod.init({}, cx);
   pending.length = 0;
   mod.sp = { id: 'space', folder: '/repo' }; mod.spaceKey = 'space'; mod.branchLoaded = true; mod.listLoaded = true; mod.me = { id: 'me' };
-  return { mod, cx, live, storage, ran, sent, opened, context, tick: () => { for (const fn of timers) fn(cx); }, fireAfter: () => { for (const fn of after.splice(0)) fn(cx); }, flush: async () => { while (pending.length) await Promise.all(pending.splice(0)); } };
+  return { mod, cx, live, storage, ran, sent, opened, execCalls, context, tick: () => { for (const fn of timers) fn(cx); }, fireAfter: () => { for (const fn of after.splice(0)) fn(cx); }, flush: async () => { while (pending.length) await Promise.all(pending.splice(0)); } };
 }
 const settle = () => new Promise(setImmediate);
 const same = (actual, expected) => assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected);
@@ -569,8 +573,11 @@ test('Create worktree uses Linear\'s branch name and opens a space, the agent ge
   assert.ok(log.some((l) => l.includes('fetch --no-tags origin main')));
   assert.ok(log.some((l) => l.includes('worktree add -b sam/eng-1-fix-login -- /home/sam/.herdr/worktrees/repo/sam-eng-1-fix-login FETCH_HEAD')));
   assert.ok(log.some((l) => l.includes('config branch.sam/eng-1-fix-login.herdr-issue ENG-1')));
+  const add = h.execCalls.find(([, args]) => args[0] === 'worktree' && args[1] === 'add');
+  assert.equal(add[2].timeout, 600_000);
   const [name, args] = h.ran.at(-1);
   assert.equal(name, 'space.new');
+  assert.equal(args.machine, '');
   assert.equal(args.argv[0], 'claude');
   assert.match(args.argv[1], /^You are being given background only[\s\S]*Linear issue ENG-1/);
   assert.equal(h.mod.worktreeForm, null);
@@ -610,7 +617,7 @@ test('the base can be picked, and a stacked branch starts from what it has local
   assert.equal(await added((a) => has(1)(a), 'main'), 'FETCH_HEAD', 'only on the remote');
 });
 
-test('Create worktree can move the issue to Started, and refuses bad names and existing branches', async () => {
+test('Create worktree can move the issue to Started, rejects blank names and existing branches', async () => {
   const log = [];
   const h = harness({ exec: gitRepo(log) });
   h.mod.issue = ISSUE({ state: { id: 'todo', name: 'Todo', type: 'unstarted' } });
@@ -618,9 +625,13 @@ test('Create worktree can move the issue to Started, and refuses bad names and e
   h.mod.api = async (r) => { asked.push(r); return ISSUE(); };
   h.mod.showWorktree(h.cx); await h.flush();
   const form = h.mod.worktreeForm;
-  form.name.set_value('../evil');
+  form.name.set_value('');
   h.mod.createWorktree(h.cx); await h.flush();
-  assert.match(form.error, /letters, numbers/);
+  assert.match(form.error, /Enter a worktree name/);
+  assert.equal(log.some((l) => l.includes('worktree add')), false);
+  form.name.set_value('..');
+  h.mod.createWorktree(h.cx); await h.flush();
+  assert.match(form.error, /other than \. or \.\./);
   assert.equal(log.some((l) => l.includes('worktree add')), false);
   form.name.set_value('ok');
   form.start = true;
@@ -633,6 +644,43 @@ test('Create worktree can move the issue to Started, and refuses bad names and e
   assert.match(exists.mod.worktreeForm.error, /already exists/);
 });
 
+test('worktree slugs keep Unicode and hash symbol-only names like Herdr', () => {
+  const { slug } = harness().context;
+  assert.equal(slug('e\u0301'), slug('é'));
+  assert.equal(slug('fix/你好'), 'fix-你好');
+  assert.equal(slug('../evil'), '..-evil');
+  assert.match(slug('🔥'), /^branch-[0-9a-f]{8}$/);
+  assert.notEqual(slug('🔥'), slug('✨'));
+});
+
+test('Create worktree reads Herdr’s directory and safely names a symbol-only worktree', async () => {
+  const appHome = fs.mkdtempSync(path.join(require('os').tmpdir(), 'branch-issue-settings-'));
+  fs.writeFileSync(
+    path.join(appHome, 'settings.json'),
+    JSON.stringify({ worktrees: { directory: '~/Developer/worktrees' } }),
+  );
+  const log = [];
+  try {
+    const h = harness({ exec: gitRepo(log), appHome });
+    h.mod.issue = ISSUE({ branchName: '修复/你好' });
+    h.mod.showWorktree(h.cx);
+    await h.flush();
+    const form = h.mod.worktreeForm;
+    assert.equal(form.branch.value(), '修复/你好');
+    assert.equal(form.name.value(), '修复-你好');
+    form.name.set_value('🔥');
+    form.nameEdited = true;
+    click(h.mod.render(), 'issue-worktree-submit', h);
+    await h.flush();
+    const folder = h.context.slug('🔥');
+    assert.ok(log.some((line) =>
+      line.includes(`worktree add -b 修复/你好 -- /home/sam/Developer/worktrees/repo/${folder} FETCH_HEAD`),
+    ));
+  } finally {
+    fs.rmSync(appHome, { recursive: true, force: true });
+  }
+});
+
 test('an issue\'s worktrees are listed, and a click switches to or opens their space', async () => {
   const h = harness({ exec: git([['--get-regexp', 'branch.fix.herdr-issue ENG-1\n'], ['worktree list', 'worktree /wt/eng\nHEAD a\nbranch refs/heads/fix\n\n']]) });
   h.mod.issue = ISSUE();
@@ -640,7 +688,7 @@ test('an issue\'s worktrees are listed, and a click switches to or opens their s
   let tree = h.mod.render();
   assert.match(strings(find(tree, 'issue-worktree-row-0')), /eng\s+fix/);
   find(tree, 'issue-worktree-row-0').handlers.click({}, h.cx);
-  assert.equal(h.ran.at(-1)[0], 'space.new');
+  same(h.ran.at(-1), ['space.new', { folder: '/wt/eng', machine: '', tab: 'eng' }]);
   h.live.spaces = [{ id: 'wt', folder: '/wt/eng' }];
   h.mod.spaceKey = 'space';
   tree = h.mod.render();
