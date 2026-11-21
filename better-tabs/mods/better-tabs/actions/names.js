@@ -3,7 +3,7 @@
 // `shared("better-tabs.names")`, so a name that differs from them is the person's own and is
 // left alone; renaming a tab to nothing hands it back. Logic only: the bar's copy runs
 // `tab.rename` from its timer, never in render.
-import { spaces, panes, run, shared, setShared, home } from "herdr";
+import { spaces, panes, run, shared, setShared, home, checking } from "herdr";
 
 export const NAMES_KEY = "better-tabs.names";
 
@@ -26,8 +26,16 @@ export function cleanName(text) {
 
 // An agent's title without the status glyph some agents put in front of it while they work
 // (✳, ✻, ·, a braille spinner), so the tab isn't renamed on every frame.
-function titleText(title) {
-  return cleanName(String(title ?? "").replace(/^[\s\p{So}\p{Sk}\p{Co}·•*]+/u, ""));
+function titleText(title, pane) {
+  const text = String(title ?? "")
+    .replace(/^[^\p{L}\p{N}\p{Ps}\p{Pi}~/]+/u, "")
+    .replace(/^\[ [!.] \] /, "")
+    .trim();
+  if (!text || text === pane?.terminal || text.includes("@") || text.toLowerCase() === pane?.program?.key)
+    return null;
+  // A path is location, not a useful tab topic.
+  if (/^[~/]|^[A-Za-z]:\\/.test(text)) return null;
+  return cleanName(text);
 }
 
 function homeFolder() {
@@ -68,7 +76,7 @@ function paneName(pane, homePath) {
   if (program.shell) return { name: folder, rank: 1 };
   const name = cleanName(program.name);
   if (!program.agent) return { name, rank: 2 };
-  const title = titleText(pane.title);
+  const title = titleText(pane.title, pane);
   const topic = title && !onlyFolder(title, pane.cwd, folder);
   return { name: topic ? title : name, rank: 3 };
 }
@@ -81,7 +89,7 @@ function tabWants(tabPanes, homePath) {
   for (const pane of tabPanes) {
     const named = paneName(pane, homePath);
     if (!named) continue;
-    const names = [named.name, titleText(pane.title), cleanName(pane.title), cleanName(pane.program.name)];
+    const names = [named.name, titleText(pane.title, pane), cleanName(pane.program.name)];
     for (const name of [...names, folderName(pane.cwd, homePath)]) if (name) known.add(name);
     if (named.name && named.rank > (best?.rank ?? 0)) best = named;
   }
@@ -152,7 +160,7 @@ function withoutKeys(record, keys) {
 export const nameMethods = {
   nameTabs(now = Date.now()) {
     // Until the installed settings are read, auto_name may be off.
-    if (!this.settingsReady || !this.settings.tabs.auto_name) return;
+    if (checking() || !this.settingsReady || !this.settings.tabs.auto_name) return;
     const saved = shared(NAMES_KEY) ?? {};
     const { renames, records } = planNames(spaces(), panes(), saved, now);
     for (const { id, name } of renames) {

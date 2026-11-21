@@ -26,8 +26,9 @@ No requirements. The mod runs no programs and reaches no network. It runs Herdr 
 - **Quick clicks never drag:** a drag starts only once a press has lasted 400ms (`tabs.drag_delay`) and the pointer has moved 12px.
 - **Tabs wrap** onto more lines, and the bar grows to hold them, then shrinks back as tabs close.
 - The **+** sits right after the last tab.
+- **Scroll over the bar** to switch tabs. Wheel notches switch once each; touchpad gestures switch in steps.
 - Double-click to rename, right-click for the tab menu, and close the active tab with its ×.
-- **Tabs name themselves** and keep up: an agent by its conversation topic, the title Herdr gets from it, or its name until it has one; a shell by its folder; another program by its name (Neovim). Your own names stay, and renaming a tab to nothing hands it back.
+- **Tabs name themselves** and keep up: an agent by its useful live title, or its name when the title is generic; a shell by its folder; another program by its name (Neovim). Your own names stay, and renaming a tab to nothing hands it back.
 - Program icons, a spinner while working, and a dot when blocked or done.
 - **Drag panel buttons** (Files, Changes and any you add) to reorder them, the same way.
 - **The ⋮ menu:** drop a panel button on it to hide it. Click **⋮** to see hidden buttons, then click one to use it, drag it back out, or click its **pin** to return it to the toolbar. The menu also holds buttons there's no room for.
@@ -52,7 +53,7 @@ Copy `mods/better-tabs/` into `~/.config/herdr-app/mods/` again, or ask your age
 <details>
 <summary>Upgrading from 2.x</summary>
 
-3.0 removes options nothing used: `hooks.js`, buttons from other mods (`contributions`), the `mod-tab`, `overlay`, `toggle-stack`, `sequence`, `shared` and `hook` actions, badges, the `enabledWhen`, `activeWhen` and `disabled` conditions, `iconOnly`, `order`, `overflow`, `maxButtons`, `toolbarId`, `commands`, `modIcons`, `tabMaxWidth`, `closeButtons`, `programIcons`, `statusIndicators`, `newButton`, `sidebar` and mouse-wheel tab switching. Tabs now wrap instead of scrolling.
+3.0 removed options nothing used: `hooks.js`, buttons from other mods (`contributions`), the `mod-tab`, `overlay`, `toggle-stack`, `sequence`, `shared` and `hook` actions, badges, the `enabledWhen`, `activeWhen` and `disabled` conditions, `iconOnly`, `order`, `overflow`, `maxButtons`, `toolbarId`, `commands`, `modIcons`, `tabMaxWidth`, `closeButtons`, `programIcons`, `statusIndicators`, `newButton`, `sidebar` and mouse-wheel tab switching. Tabs now wrap instead of scrolling. Version 3.3 restores wheel switching over the bar without changing the wrapping layout.
 
 </details>
 
