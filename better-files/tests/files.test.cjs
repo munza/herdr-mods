@@ -15,18 +15,18 @@ const source = `const { highlightLines, tokenizeLine, syntaxColors, languageOf: 
     .replace(/^import\s+[\s\S]*?;$/gm, '')
     .replace(/^export default (\w+);$/m, 'globalThis.Mod = $1;')
     .replace(/^export /gm, '')
-  + '\nObject.assign(globalThis, { parseStatus, markKey, holdsChange, parseHunks, buildRows, highlightLines, tokenizeLine, lexerLanguage, viewable, languageOf, sortEntries, markdownBlocks, resolvePath, isMarkdown, MAX_CHARS, indexOf, findMatches, matchRows, foldersTo, MAX_INDEXED, MAX_MATCHES, COPY_IMAGE, PER_FOLDER });';
+  + '\nObject.assign(globalThis, { parseStatus, markKey, holdsChange, parseHunks, buildRows, highlightLines, tokenizeLine, lexerLanguage, viewable, languageOf, sortEntries, markdownBlocks, resolvePath, isMarkdown, MAX_CHARS, indexOf, findMatches, matchRows, foldersTo, MAX_INDEXED, MAX_MATCHES, COPY_IMAGE, PER_FOLDER, expandTabs, fileLinesOf });';
 
 const TREE = { '/repo': [['d', 'src'], ['f', 'b.md'], ['f', 'a.md']], '/repo/src': [['f', 'main.go']] };
 
 // Every file under /repo, as git ls-files -z would list it.
 const EVERY = 'a.md\0b.md\0new.txt\0src/main.go\0';
 
-function world({ pictures = {}, spaceFolder = '/repo', focusOn = null, storage = {}, everything = EVERY, deleted = '', found = '', copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult, execOverride, platform = 'macos', watchOverride, readOverride } = {}) {
+function world({ pictures = {}, spaceFolder = '/repo', focusOn = null, storage = {}, everything = EVERY, deleted = '', found = '', copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult, execOverride, platform = 'macos', watchOverride, readOverride, checking = false } = {}) {
   const store = new Map(Object.entries(sharedInit));
   const ran = [], execs = [], sent = [], clipboard = [], closed = [], overlays = [], urls = [], scrolled = [];
   const live = { pictures: { ...pictures }, layout, panes: [{ pane: 'p1', tab: 'tab1', cwd, terminal: 'term1' }, ...(focusOn ? [focusOn] : [])], focused: focusOn ? { space: 's', tab: focusOn.tab, pane: focusOn.pane, cwd: null } : { space: 's', tab: 'tab1', pane: 'p1', cwd, terminal: 'term1' }, agents, texts: { ...texts } };
-  const timers = [], later = [];
+  const timers = [], later = [], watchCalls = [];
   const kept = new Map(Object.entries(storage));
   const waiting = [];
   // What holds the keyboard: a focus handle or an input's state.
@@ -56,6 +56,7 @@ function world({ pictures = {}, spaceFolder = '/repo', focusOn = null, storage =
         if (k === 'when') return (b, f) => { if (b) f(proxy); return proxy; };
         return (...a) => {
           if (k === 'id') t.elementId = a[0];
+          if (k === 'drag_paths') t.dragPaths = a;
           if (k === 'text_color') t.colors.push(a[0]);
           if (k === 'border_color') t.border = a[0];
           if (k === 'on_click') t.handlers.click = a[0];
@@ -78,6 +79,7 @@ function world({ pictures = {}, spaceFolder = '/repo', focusOn = null, storage =
     theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
     settings: () => ({ font_family: 'Code', font_size: 14 }), window: () => ({ platform }),
     props: () => ({ mode, viewer, file, target, space: 's', overlay: 'ov1' }),
+    checking: () => checking,
     // Space `s` is the active one; a pane with `space` set puts its tab in that space instead.
     // A focused file tab (`focusOn`) is its space's shown tab.
     spaces: () => {
@@ -92,7 +94,7 @@ function world({ pictures = {}, spaceFolder = '/repo', focusOn = null, storage =
       if (name === 'tab.new' && args.mod) live.panes.push({ pane: `p${live.panes.length + 1}`, tab: `tab${live.panes.length + 1}`, mod: args.mod });
     },
     openOverlay: (spec) => { overlays.push(JSON.parse(JSON.stringify(spec))); return 'ov1'; }, closeOverlay: (id) => closed.push(id),
-    layout: () => live.layout, appHome: () => '/app', nextCommand: () => new Promise((resolve) => waiting.push(resolve)), watchFolder: watchOverride ?? (() => new Promise(() => {})),
+    layout: () => live.layout, appHome: () => '/app', nextCommand: () => new Promise((resolve) => waiting.push(resolve)), watchFolder: (...args) => { watchCalls.push(args); return watchOverride ? watchOverride(...args) : new Promise(() => {}); },
     readTextFile: async (p, options) => { if (p.endsWith('better-changes/mod.json')) return '{}'; if (p.endsWith('better-files/mod.json')) return null; if (readOverride) return readOverride(p, options); if (live.texts[p] instanceof Error) throw live.texts[p]; return live.texts[p] ?? null; },
     knownAgents: async () => known,
     hc: async (args) => { sent.push(args); return hcResult ?? { code: 0, stdout: '', stderr: '' }; },
@@ -122,7 +124,7 @@ function world({ pictures = {}, spaceFolder = '/repo', focusOn = null, storage =
   mod.init({}, cx);
   const flush = async () => { for (let i = 0; i < 25; i++) await new Promise(setImmediate); };
   const command = async (name) => { for (let i = 0; i < 25 && !waiting.length; i++) await new Promise(setImmediate); waiting.shift()(name); await flush(); };
-  return { mod, cx, store, kept, command, ran, execs, sent, clipboard, closed, overlays, urls, scrolled, later, live, context, flush, tick: () => { for (const fn of timers) fn(cx); } };
+  return { mod, cx, store, kept, command, ran, execs, sent, clipboard, closed, overlays, urls, scrolled, later, timers, watchCalls, live, context, flush, tick: () => { for (const fn of timers) fn(cx); } };
 }
 const ready = async (o) => { const h = world(o); await h.flush(); return h; };
 const find = (node, id) => (node?.elementId === id ? node : node?.nodes?.map((n) => find(n, id)).find(Boolean));
@@ -133,16 +135,45 @@ const viewers = (h) => Object.values(h.store.get('better-files.viewers') ?? {});
 const AGENT = (address, over = {}) => ({ address, space: 's', tab_name: `Agent ${address}`, status: 'idle', program: { key: 'claude' }, ...over });
 const CLAUDE = { key: 'claude', name: 'Claude Code', run: ['claude'], installed: true };
 
+test('tabs advance to the next four-column stop in current and replaced lines', () => {
+  const h = world();
+  assert.deepEqual(Array.from(h.context.fileLinesOf('a\tb\tc\n\tfoo\n1234\tx')), [
+    'a   b   c',
+    '    foo',
+    '1234    x',
+  ]);
+  const rows = h.context.buildRows(['new'], [{
+    kind: 'changed', line: 0, count: 1, oldStart: 1, old: ['a\tb'],
+  }], new Set(['changed-1']));
+  assert.equal(rows[0].text, 'a   b');
+});
+
+test('herdr-app check starts no listing, watch, settings task, or timer', () => {
+  const h = world({ checking: true });
+  assert.deepEqual(h.execs, []);
+  assert.deepEqual(h.watchCalls, []);
+  assert.deepEqual(h.timers, []);
+  assert.deepEqual(h.later, []);
+  assert.doesNotThrow(() => h.mod.render());
+});
+
 test('the tree lists folders first, opens lazily and marks what changed', async () => {
   const h = await ready();
   const list = strings(find(h.mod.render(), 'files-list'));
   assert.match(list, /src[\s\S]*a\.md[\s\S]*b\.md M/);
+  assert.equal(JSON.stringify(find(h.mod.render(), 'files-row-src').dragPaths), JSON.stringify([['/repo/src'], { on: null }]));
+  assert.equal(JSON.stringify(find(h.mod.render(), 'files-row-a.md').dragPaths), JSON.stringify([['/repo/a.md'], { on: null }]));
   assert.equal(find(h.mod.render(), 'files-row-src/main.go'), undefined);
   click(h, 'files-row-src');
   await h.flush();
   assert.match(strings(find(h.mod.render(), 'files-row-src/main.go')), /main\.go M/);
   click(h, 'files-row-src');
   assert.equal(find(h.mod.render(), 'files-row-src/main.go'), undefined);
+});
+
+test('dragging a remote file passes its machine with the absolute path', async () => {
+  const h = await ready({ machine: 'build' });
+  assert.equal(JSON.stringify(find(h.mod.render(), 'files-row-a.md').dragPaths), JSON.stringify([['/repo/a.md'], { on: 'build' }]));
 });
 
 test('a large folder keeps 500 entries and reports the upstream limit', async () => {

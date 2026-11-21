@@ -83,6 +83,7 @@ export const treeMethods = {
       .border_color(marked ? t.accent : CLEAR)
       .text_size(TEXT.small)
       .cursor_pointer()
+      .drag_paths([path], { on: this.on ?? null })
       .when(selected, (el) => el.bg(t.selected))
       .when(!selected, (el) => el.hover((s) => s.bg(t.hover)))
       .on_click((event, cx) => {

@@ -6,7 +6,7 @@ A read-only file browser for a person's Herdr window, for directing agents rathe
 
 One framed sidebar panel, radius 10, with a 42px header: the plain title Files with the folder's name in a badge, and on the right a folder icon, a menu opening the folder in each editor or Finder (this computer only), and refresh.
 
-Under the header, a filter row, 10px and 8px padding with a rule under it, holds a 28px text box on `input` with radius 8, "Filter files" as its placeholder, a small × while it has text, then the dotfiles and Collapse all buttons. Below is a tree for the focused pane's folder: 26px rows of chevron, icon, name and a Git letter, directories first, with a dot on a folder holding changes. The icon is the plain file or folder in `muted`, or, when Better Icons is installed, its full-colour Material icon at 14px, open folders with their open icon. A file or diff tab has no folder, so focusing one leaves the tree where it was. With no folder yet, as when the panel first shows while a file tab is focused, the tree takes a terminal's folder in the space, the shown tab's first, and the space's own folder only when it has no terminal, since that's where the space was made and its terminals may have left it.
+Under the header, a filter row, 10px and 8px padding with a rule under it, holds a 28px text box on `input` with radius 8, "Filter files" as its placeholder, a small × while it has text, then the dotfiles and Collapse all buttons. Below is a tree for the focused pane's folder: 26px rows of chevron, icon, name and a Git letter, directories first, with a dot on a folder holding changes. Drag a file or folder row into a terminal to type its absolute path on that machine. The icon is the plain file or folder in `muted`, or, when Better Icons is installed, its full-colour Material icon at 14px, open folders with their open icon. A file or diff tab has no folder, so focusing one leaves the tree where it was. With no folder yet, as when the panel first shows while a file tab is focused, the tree takes a terminal's folder in the space, the shown tab's first, and the space's own folder only when it has no terminal, since that's where the space was made and its terminals may have left it.
 
 A click opens the file in one shared centre tab per space, named after the file, or goes to its tab if it's already open. A double-click keeps that tab, and never opens a second. The next click starts a new shared tab.
 
@@ -46,6 +46,8 @@ The keyboard is a `cx.focus_handle()` tracked by the list, with `on_key_down` on
 
 ## Built from
 
+Compatibility target: Herdr App 0.1.16 and herdr-core 0.1.16. Local `herdr-app check` passed; its runtime version was not confirmed.
+
 `mods/better-files/`: `main.js`, `settings.js` (shared between this repo's mods), `syntax.js` (the same file as Better Changes'), `files/file-icons.js` (shared the same way), `mod.json` (`place: none`, title Better Files), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `files/` (`model.js`, `reads.js`, `filter.js`), `actions/` (`open.js`, `outside.js`, `agents.js`, `menus.js`), `views/` (`ui.js`, `tree.js`, `filter.js`, `tools.js`, `keys.js`, `viewer.js`, `context-menu.js`), `icons/` (the tools' icons from Lucide, as the rest). Adapted from Herdr's shipped Files mod.
 
 ## Watch out
@@ -55,6 +57,8 @@ Herdr's shipped layouts are read-only, so the sidebar only shows in a layout the
 ## Done when
 
 - `herdr-app check` passes, and the tree lists the focused pane's folder with Git marks.
+- `herdr-app check` starts no listing, watch, settings task or timer; dragging file and folder rows sends their absolute paths to the local or remote terminal.
+- A tab expands to the next four-column stop in both current file lines and removed lines.
 - Typing in the filter finds a file in a folder that was never opened, from Git's list in a repository; Enter opens it, and Escape brings back the tree as it was.
 - Dotfiles hide from the tree and the matches and stay hidden after a restart; Collapse all closes every folder.
 - After a click on the tree, the arrows move a marker, Right and Left open and close folders, Enter opens the row, and keys the tree doesn't use still reach Herdr.

@@ -16,7 +16,7 @@
 // colours: syntax.js colours the file view's code, and Better Changes has the same file.
 import { View } from "gpui-kit";
 import { InputState, ScrollHandle, TextareaState } from "gpui-base";
-import { appHome, exec, nextCommand, props, setShared, shared, spaces, window } from "herdr";
+import { appHome, checking, exec, nextCommand, props, setShared, shared, spaces, window } from "herdr";
 import { loadSettings, duration } from "./settings.js";
 import { followFileIcons } from "./files/file-icons.js";
 import { readMethods } from "./files/reads.js";
@@ -53,6 +53,10 @@ class BetterFiles extends View {
     if (this.mode === "menu") {
       this.menuTarget = p.target;
       this.menuSpace = spaces().find((s) => s.active)?.id;
+      return;
+    }
+    if (checking()) {
+      if (this.mode === "sidebar") this.initSidebar(cx, true);
       return;
     }
     this.menuFocus = cx.focus_handle();
@@ -99,7 +103,7 @@ class BetterFiles extends View {
     });
   }
 
-  initSidebar(cx) {
+  initSidebar(cx, checkingOnly = false) {
     this.startedAt = Date.now();
     this.saved = new Map();
     this.entries = new Map();
@@ -126,6 +130,7 @@ class BetterFiles extends View {
     this.treeScroll = ScrollHandle.new();
     this.treeFocus = cx.focus_handle();
     this.dotfiles = savedDotfiles();
+    if (checkingOnly) return;
     this.refresh(cx);
     this.findBetterChanges(cx);
     this.findNewAgents(this.on, cx);
