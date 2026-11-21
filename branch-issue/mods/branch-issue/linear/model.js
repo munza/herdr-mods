@@ -4,11 +4,16 @@ const pad = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 export const person = (user) => user?.displayName || user?.name || "";
 export const who = (comment) => person(comment?.user) || "someone";
 
-export const slug = (text) =>
-  text
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
+export const slug = (text) => {
+  const normalized = text.normalize("NFC");
+  const name = normalized
+    .replace(/[^\p{L}\p{M}\p{N}._-]+/gu, "-")
     .replace(/^-+|-+$/g, "");
+  if (name) return name;
+  let hash = 2166136261;
+  for (const char of normalized) hash = Math.imul(hash ^ char.codePointAt(0), 16777619);
+  return `branch-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+};
 
 export const folderName = (path) =>
   (path ?? "")

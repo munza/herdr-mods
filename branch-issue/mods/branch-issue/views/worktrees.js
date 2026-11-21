@@ -33,7 +33,7 @@ export const worktreeViewMethods = {
             else
               run("space.new", {
                 folder: worktree.path,
-                machine: this.sp?.machine ?? null,
+                machine: this.sp?.machine ?? "",
                 tab: worktree.name,
               });
             cx.notify();

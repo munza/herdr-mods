@@ -164,7 +164,7 @@
           "properties": {
             "root": {
               "title": "Worktree folder",
-              "description": "Where Start work puts new checkouts.",
+              "description": "Fallback folder for Start work when Herdr settings.json has no worktrees.directory.",
               "type": "string",
               "default": "~/.herdr/worktrees"
             },
