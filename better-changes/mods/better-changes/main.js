@@ -9,7 +9,7 @@
 // but the token colours: syntax.js colours a diff's code, and Better Files has the same file.
 import { View } from "gpui-kit";
 import { TextareaState } from "gpui-base";
-import { props, shared, setShared, nextCommand, layout, run, notify, closeOverlay } from "herdr";
+import { props, shared, setShared, nextCommand, layout, run, notify, closeOverlay, checking } from "herdr";
 import { loadSettings, duration } from "./settings.js";
 import { followFileIcons } from "./file-icons.js";
 import { panelCommands } from "./panel.js";
@@ -28,6 +28,15 @@ const DEFAULT_SETTINGS = {
   panel: { toggle: false },
 };
 
+function savedCollapsed() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("collapsed") ?? "[]");
+    return Array.isArray(saved) ? saved.filter((scope) => typeof scope === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 class BetterChanges extends View {
   init(given, cx) {
     const p = props() ?? given ?? {};
@@ -39,21 +48,13 @@ class BetterChanges extends View {
     }
     if (p.overlay) {
       this.mode = "panel-key";
-      this.runPanelKey(p.overlay, cx);
+      if (!checking()) this.runPanelKey(p.overlay, cx);
       return;
     }
     this.mode = p.mode ?? "sidebar";
     this.diffSpace = p.space;
     this.source = p.source;
     this.settings = DEFAULT_SETTINGS;
-    this.restoreDiffSelection(p);
-    // Better Tabs draws this on the diff tab.
-    setShared("mod-icons", {
-      ...(shared("mod-icons") ?? {}),
-      "better-changes": "mods/better-changes/icons/file.svg",
-    });
-    followFileIcons(this, cx);
-
     this.tab = localStorage.getItem("tab") === "commit" ? "commit" : "changes";
     this.view = localStorage.getItem("view") === "flat" ? "flat" : "tree";
     this.diffLayout =
@@ -63,7 +64,7 @@ class BetterChanges extends View {
     this.menuOpen = false;
     this.menuFocus = cx.focus_handle();
     this.closed = new Set();
-    this.collapsed = new Set(JSON.parse(localStorage.getItem("collapsed") ?? "[]"));
+    this.collapsed = new Set(savedCollapsed());
     this.files = [];
     this.rows = [];
     this.splitOffset = 0;
@@ -71,12 +72,24 @@ class BetterChanges extends View {
     this.resetCommits();
     if (this.mode === "sidebar") this.initCommitBox(cx);
 
+    if (checking()) return;
+    this.restoreDiffSelection(p);
+    // Better Tabs draws this on the diff tab.
+    setShared("mod-icons", {
+      ...(shared("mod-icons") ?? {}),
+      "better-changes": "mods/better-changes/icons/file.svg",
+    });
+    followFileIcons(this, cx);
     cx.timer.every(CONTEXT_POLL_MS, (cx) => this.follow(cx));
     this.applySettings(cx);
     cx.spawn(async (cx) => {
       for (;;) this.command(await nextCommand(), cx);
     });
     this.refresh(cx);
+  }
+
+  close() {
+    this.stopWatching();
   }
 
   // `mod.open:better-changes` from a key. `<mod>.<command>` can't reach a hidden

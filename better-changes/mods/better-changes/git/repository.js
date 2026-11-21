@@ -1,6 +1,6 @@
 // The mod's Git state: following the repository, changing the index, history,
 // commit and amend. The reads themselves are in git-reads.js.
-import { spaces, panes, focused, exec, watchFolder, shared, setShared } from "herdr";
+import { spaces, panes, focused, exec, watchFolder, shared, setShared, checking } from "herdr";
 import {
   readStatus,
   readBranchAndRepo,
@@ -69,7 +69,7 @@ export const gitMethods = {
   },
 
   refresh(cx) {
-    if (this.loading || this.busy) return;
+    if (checking() || this.loading || this.busy) return;
     const { cwd, on } = this.location();
     const context = this.contextKey();
     if (context !== this.context) this.startNewContext(context);
@@ -102,7 +102,7 @@ export const gitMethods = {
     this.selection = null;
     this.error = null;
     this.note = null;
-    this.watched = null;
+    this.stopWatching();
     this.resetCommits();
     if (this.input) {
       this.message = "";
@@ -165,18 +165,30 @@ export const gitMethods = {
 
   // Remote repositories rely on the poll: watchFolder is local only.
   watch(root, cx) {
-    if (this.on || this.watched === root) return;
+    if (checking() || this.on || this.watchState?.root === root) return;
+    const state = { root, request: watchFolder(root) };
+    this.watchState = state;
     this.watched = root;
     cx.spawn(async (cx) => {
       try {
-        while (this.watched === root) {
-          await watchFolder(root);
-          if (this.watched === root) this.refresh(cx);
+        while (this.watchState === state) {
+          await state.request;
+          if (this.watchState !== state) return;
+          this.refresh(cx);
+          if (this.watchState !== state) return;
+          state.request = watchFolder(root);
         }
       } catch {
-        if (this.watched === root) this.watched = null;
+        if (this.watchState === state) this.stopWatching();
       }
     });
+  },
+
+  stopWatching() {
+    const state = this.watchState;
+    this.watchState = null;
+    this.watched = null;
+    state?.request?.cancel?.();
   },
 
   // ── Stage and unstage ─────────────────────────────────────────────────────
