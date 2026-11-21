@@ -26,6 +26,8 @@ Text boxes are made after each read, never during a render, which Herdr forbids.
 
 ## Built from
 
+Built and tested against Herdr 0.1.16.
+
 `mods/better-config/`: `main.js` (the dialog), `model.js` (fields, checks, typed input, what changed and what was lost; no Herdr calls), `mod.json` (`place: none`, title Better Config, a dialog `overlay`), `mod.schema.json`, `icons/` (Lucide chevron-down, check). `keys.json` suggests a key. The look follows Herdr's `frame/settings/main.js`.
 
 ## Watch out
