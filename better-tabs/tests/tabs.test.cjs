@@ -77,6 +77,7 @@ function harness(config = {}) {
     theme: () => ({}),
     nextCommand: () => new Promise(() => {}),
     home: () => "/home/sam",
+    checking: () => false,
     Date,
     console,
   };
@@ -215,6 +216,22 @@ test("tabs select, drag reorder, rename, close, and open context menus", () => {
   assert.equal(h.calls.at(-1).name, "tab.select");
   h.find(el, "tab-t2").handlers["on_mouse_down:right"]({}, h.cx);
   assert.equal(h.calls.at(-1).overlay.mod, "menu");
+});
+
+test("wheel notches and touchpad gestures switch one tab at a time", () => {
+  const h = harness();
+  const root = h.tabs.render(h.cx);
+  const wheel = h.find(root, "better-tabs-root").handlers.on_scroll_wheel;
+  wheel({ delta_lines: { y: 1 }, delta: { y: 0 } }, h.cx);
+  wheel({ delta_lines: { y: 0 }, delta: { y: -1 } }, h.cx);
+  assert.deepEqual(plain(h.calls.map((call) => call.name)), ["tab.prev"]);
+  h.calls.length = 0;
+  h.context.Date = { now: () => 1000 };
+  wheel({ delta: { y: 21 }, touch_phase: "started" }, h.cx);
+  assert.deepEqual(plain(h.calls.map((call) => call.name)), ["tab.prev"]);
+  h.context.Date = { now: () => 1200 };
+  wheel({ delta: { y: 60 } }, h.cx);
+  assert.deepEqual(plain(h.calls.map((call) => call.name)), ["tab.prev", "tab.prev"]);
 });
 test("overflow uses this mod and includes hidden-toolbar actions ", () => {
   const h = harness({
@@ -887,6 +904,39 @@ test("a title is cleaned: one line, no status glyph in front, and cut when long"
   const long = h.cleanName("a".repeat(100));
   assert.equal(long.length, 80);
   assert.ok(long.endsWith("…"));
+});
+
+test("agent titles strip Codex marks, keep brackets, and reject generic or location titles", () => {
+  const { tick, space } = naming(
+    [unnamed("topic", 1), unnamed("bracket", 2), unnamed("path", 3), unnamed("host", 4), unnamed("terminal", 5), unnamed("key", 6)],
+    [
+      { tab: "topic", title: "[ ! ] Fix the login form", terminal: "term-1", program: AGENT("Codex") },
+      { tab: "bracket", title: "[Review] the migration", terminal: "term-2", program: AGENT("Claude Code") },
+      { tab: "path", title: "~/work/project", terminal: "term-3", program: AGENT("Claude Code") },
+      { tab: "host", title: "sam@example.com", terminal: "term-4", program: AGENT("Claude Code") },
+      { tab: "terminal", title: "term-5", terminal: "term-5", program: AGENT("Claude Code") },
+      { tab: "key", title: "claude-code", terminal: "term-6", program: { ...AGENT("Claude Code"), key: "claude-code" } },
+    ],
+  );
+  assert.deepEqual(tick(), [
+    { id: "topic", name: "Fix the login form" },
+    { id: "bracket", name: "[Review] the migration" },
+    { id: "path", name: "Claude Code" },
+    { id: "host", name: "Claude Code" },
+    { id: "terminal", name: "Claude Code" },
+    { id: "key", name: "Claude Code" },
+  ]);
+  assert.equal(space.tabs[2].name, "Claude Code");
+});
+
+test("tab auto-naming does not run during app checks", () => {
+  const { h, tick } = naming(
+    [unnamed("t1", 1)],
+    [{ tab: "t1", title: "Fix the login form", terminal: "term-1", program: AGENT("Claude Code") }],
+  );
+  h.context.checking = () => true;
+  assert.deepEqual(tick(), []);
+  assert.equal(h.data["better-tabs.names"], undefined);
 });
 
 test("a moment with no tabs listed forgets nothing", () => {

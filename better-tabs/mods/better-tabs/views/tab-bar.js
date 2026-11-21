@@ -49,6 +49,31 @@ export const tabBarMethods = {
     return draw({ icon: shared("mod-icons")?.[mine.find((p) => p.mod)?.mod], tint: true });
   },
 
+  // Smooth touchpad gestures can emit many small events. Accumulate them into
+  // one tab step at a time, while a wheel notch switches immediately.
+  wheelTabs(event) {
+    if (event.delta_lines) {
+      if (event.delta_lines.y) run(event.delta_lines.y > 0 ? "tab.prev" : "tab.next");
+      return;
+    }
+    const swipe = this.swipe;
+    const now = Date.now();
+    if (
+      event.touch_phase === "started" ||
+      now - swipe.at > 250 ||
+      event.delta.y * swipe.acc < 0
+    )
+      Object.assign(swipe, { acc: 0, steps: 0 });
+    swipe.at = now;
+    swipe.acc += event.delta.y;
+    const step = swipe.steps ? 60 : 20;
+    if (Math.abs(swipe.acc) < step || now - swipe.last < 100) return;
+    swipe.acc -= Math.sign(swipe.acc) * step;
+    swipe.steps++;
+    swipe.last = now;
+    run(event.delta.y > 0 ? "tab.prev" : "tab.next");
+  },
+
   tabItem(tab, space, ps, t) {
     const icon = this.tabIcon(tab, ps, t);
     const drag = this.tabDrag;
@@ -183,6 +208,7 @@ export const tabBarMethods = {
         }
       })
       .on_mouse_move((event, cx) => this.movePointer(event, cx))
+      .on_scroll_wheel((event) => this.wheelTabs(event))
       .on_mouse_up("left", (_event, cx) => {
         this.commitTabDrag(cx);
         this.finishActionDrag(cx);

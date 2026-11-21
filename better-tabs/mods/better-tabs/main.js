@@ -59,6 +59,7 @@ class Tabs extends View {
       cx.notify();
     });
     this.tabDrag = null;
+    this.swipe = { acc: 0, steps: 0, at: 0, last: 0 };
     this.panels = {};
     try {
       const saved = JSON.parse(localStorage.getItem("panels") ?? "{}");
