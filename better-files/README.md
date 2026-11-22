@@ -110,7 +110,7 @@ Sending to agents: a running agent gets `hc send`; **(spawn)** runs `hc run --bg
 In `mods/better-files/`:
 
 - `main.js`: lists what's where. `settings.js`: shared between the mods.
-- `files/`: `model.js`, `reads.js`, `filter.js`, `file-icons.js`, and `shell.js`, every shell command, for macOS and Windows.
+- `files/`: `model.js`, `reads.js`, `filter.js`, `file-icons.js`, and `shell.js`, which picks every shell command from `shell/<platform>.js`: `macos.js` and `windows.js`, with the POSIX commands macOS shares in `posix.js`.
 - `actions/`: `open.js`, `outside.js`, `agents.js`, `menus.js`.
 - `views/`: `ui.js`, `tree.js`, `filter.js`, `tools.js`, `keys.js`, `viewer.js`, `context-menu.js`. `icons/`.
 - `mod.schema.json`: every setting with its default, which must match the code's `DEFAULT_SETTINGS`.

@@ -6,8 +6,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.join(__dirname, '../mods/better-files');
+// shell.js and the platform files it picks from, as one module: a data: URL can't
+// resolve relative imports, so they're taken out and the files joined.
+const SHELL_FILES = ['files/shell/posix.js', 'files/shell/macos.js', 'files/shell/windows.js', 'files/shell.js'];
 const load = () =>
-  import(`data:text/javascript,${encodeURIComponent(fs.readFileSync(path.join(root, 'files/shell.js'), 'utf8'))}`);
+  import(`data:text/javascript,${encodeURIComponent(SHELL_FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n').replace(/^import\s+[\s\S]*?;$/gm, '').replace(/^export \{[^}]*\};$/gm, ''))}`);
 
 // --- psQuote ---
 
