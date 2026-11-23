@@ -39,7 +39,6 @@ const EDITOR_COMMAND = /^[A-Za-z0-9_][A-Za-z0-9._+-]*$/;
 export const linux = {
   ...posix,
   fileManager: "file manager",
-  fileManagerInText: "the file manager",
   // editor.exe is the path the lookup found.
   openInEditor: (editor, path) => ({ program: editor.exe, args: [path] }),
   openWithDefault: (path) => ({ program: "sh", args: ["-c", OPEN_SH, "open", path] }),

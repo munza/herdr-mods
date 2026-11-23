@@ -5,7 +5,7 @@ import { openOverlay, shared, theme, window } from "herdr";
 import { openFolderLabel } from "../files/shell.js";
 import { baseName, holdsChange, markKey, TOTAL_ROWS } from "../files/model.js";
 import { viewerEntries } from "../actions/open.js";
-import { editorId, foundEditors } from "../actions/outside.js";
+import { editorId, foundEditors, ownFileManager } from "../actions/outside.js";
 import { agentName } from "../actions/agents.js";
 import { TEXT, Badge, Button, Chevron, FileIcon, Icon, markColor, IconButton, Message, Panel, PanelHeader, StatusLetter, TextBox } from "./ui.js";
 
@@ -155,10 +155,10 @@ export const treeMethods = {
         .child(Icon("folder", 15)),
       choices: [
         ...editors.map((e) => ({ id: editorId(e), label: `Open in ${e.name}` })),
-        { id: FINDER, label: openFolderLabel(window()?.platform) },
+        { id: FINDER, label: openFolderLabel(window()?.platform, ownFileManager()) },
       ],
       onChoose: (id) => {
-        if (id === FINDER) this.openWithDefault(this.root);
+        if (id === FINDER) this.openFolder(this.root);
         else this.openInEditor(editors.find((e) => editorId(e) === id), this.root);
       },
     });

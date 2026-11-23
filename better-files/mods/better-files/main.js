@@ -32,7 +32,7 @@ import { keyMethods } from "./views/keys.js";
 import { viewerMethods } from "./views/viewer.js";
 import { contextMenuMethods } from "./views/context-menu.js";
 
-const DEFAULT_SETTINGS = { refresh: { tree: "10s", file: "2s" }, editors: [], gutter: true, markdown: "preview" };
+const DEFAULT_SETTINGS = { refresh: { tree: "10s", file: "2s" }, editors: [], fileManager: { name: "", command: [] }, gutter: true, markdown: "preview" };
 const SYNC_MS = 300;
 const CLEANUP_KEY = "better-files.cleanup";
 const CLEANUP_OVERFLOW = "better-files.cleanupOverflow";
@@ -140,6 +140,7 @@ class BetterFiles extends View {
       const { settings, problems } = await loadSettings("better-files", DEFAULT_SETTINGS);
       for (const problem of problems) console.warn(`better-files mod.json settings: ${problem}`);
       this.findEditors(cx, Array.isArray(settings.editors) ? settings.editors : []);
+      this.shareFileManager(settings.fileManager);
       cx.timer.every(Math.max(1000, duration(settings.refresh.tree, 10000)), (cx) => this.refresh(cx));
     });
     cx.spawn(async (cx) => {

@@ -6,14 +6,26 @@ import {
   pickDetectEditors,
   pickOpenInEditor,
   pickOpenWithDefault,
+  pickOwnFileManager,
   pickReveal,
   revealError,
 } from "../files/shell.js";
 
 const FOUND = "better-files.editors";
 const ERROR = "better-files.error";
+const FILE_MANAGER = "better-files.file-manager";
 
 export const foundEditors = () => shared(FOUND) ?? [];
+
+// settings.fileManager as { name, command }, or null for the platform's own: a command of
+// one or more non-empty strings, else none. The sidebar shares it, since the menu is a copy
+// of its own that reads no settings.
+export function fileManagerOf(setting) {
+  const command = Array.isArray(setting?.command) ? setting.command : [];
+  if (!command.length || !command.every((part) => typeof part === "string" && part)) return null;
+  return { name: typeof setting.name === "string" ? setting.name.trim() : "", command };
+}
+export const ownFileManager = () => fileManagerOf(shared(FILE_MANAGER));
 
 // macOS entries are known by app ID, Windows and Linux ones by their program's path.
 export const editorId = (e) => e.bundle ?? e.exe;
@@ -41,6 +53,10 @@ export const outsideMethods = {
       setShared(FOUND, found);
       cx.notify();
     });
+  },
+
+  shareFileManager(setting) {
+    setShared(FILE_MANAGER, fileManagerOf(setting));
   },
 
   // Show diff is only offered where Better Changes can answer it.
@@ -86,7 +102,14 @@ export const outsideMethods = {
   },
 
   reveal(path) {
-    const platform = window()?.platform;
-    return this.outside(pickReveal(path, platform), revealError(platform));
+    const platform = window()?.platform, own = ownFileManager();
+    return this.outside(own ? pickOwnFileManager(own, path) : pickReveal(path, platform), revealError(platform, own));
+  },
+
+  // The folder menu's Open in: the person's file manager, else whatever opens a folder here.
+  openFolder(path) {
+    const own = ownFileManager();
+    if (!own) return this.openWithDefault(path);
+    return this.outside(pickOwnFileManager(own, path), `open it in ${own.name || "the file manager"}`);
   },
 };

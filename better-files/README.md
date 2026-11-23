@@ -64,7 +64,7 @@ Right-click a file or folder for:
 | **Open**, **Open in new tab** | In the shared tab, or a tab of its own. Files only. |
 | **Open in** an editor | Each installed editor. Folders too. |
 | **Open in default app** | Whatever your computer opens that file with. |
-| **Show in Finder** | Reveals it. **Show in Explorer** on Windows, **Show in file manager** on Linux. |
+| **Show in Finder** | Reveals it. **Show in Explorer** on Windows, **Show in file manager** on Linux, or the file manager you set in `fileManager`. |
 | **Show diff** | Opens a changed file's diff in [Better Changes](../better-changes/README.md), if you have it. |
 | **Copy relative path**, **Copy full path** | For pasting into a prompt. |
 | **Send to** an agent | Asks what it should do, then sends that with the path. Choose an agent that's running, **(spawn)** to start a sub-agent under it, or a new one in its own tab. Only **Send** delivers. |
@@ -90,6 +90,8 @@ Listing a folder needs `sh`. On a Windows computer, its own folders are listed w
 | `refresh.tree` | `10s` | How often the tree rereads, on top of watching the folder. Never closer than 1 second. |
 | `refresh.file` | `2s` | How often an open file is checked for changes. Never closer than 500ms. |
 | `editors` | `[]` | More editors for Open in, added to the built-in list, each by macOS app ID, such as `[{ "name": "PhpStorm", "bundle": "com.jetbrains.PhpStorm" }]`, or on Linux by its commands, such as `[{ "name": "Kate", "bins": ["kate"] }]`. Shown only if installed. |
+| `fileManager.name` | `""` | What **Show in** and the folder menu's **Open in** call the command below, such as `"Nautilus"`. Empty: file manager. |
+| `fileManager.command` | `[]` | A program for **Show in** and the folder menu's **Open in**, in place of Finder, Explorer or the desktop's file manager: the program and its first arguments, such as `["nautilus", "--select"]`. **Show in** puts the file or folder after them, the folder menu the folder on show. This computer only. Empty: the platform's own. |
 | `gutter` | `true` | Tint changed lines. `false` uses Herdr's own editor instead: selection, folding and a real grammar, but no line colours. Its grammars have no TypeScript or Vue, so those are highlighted as JavaScript and HTML. |
 | `markdown` | `preview` | How a Markdown file first opens, `preview` or `code`. The toggle in a tab overrides it for that tab. |
 

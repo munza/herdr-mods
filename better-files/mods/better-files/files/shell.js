@@ -25,6 +25,15 @@ export const pickReveal = (path, platform) => shellFor(platform).reveal(path);
 export const pickIndex = (root, depth, bytes) => windows.index(root, depth, bytes);
 export const pickDetectEditors = (baseEditors, extra, platform) => shellFor(platform).detectEditors([...baseEditors, ...extra]);
 
-export const revealLabel = (platform) => `Show in ${shellFor(platform).fileManager}`;
-export const openFolderLabel = (platform) => `Open in ${shellFor(platform).fileManager}`;
-export const revealError = (platform) => `show it in ${shellFor(platform).fileManagerInText ?? shellFor(platform).fileManager}`;
+// --- A file manager of the person's own (settings.fileManager) ---
+// Its command, then the file or folder: for Show in, the item; for the folder menu, the folder. On any platform.
+export const pickOwnFileManager = (own, path) => ({ program: own.command[0], args: [...own.command.slice(1), path] });
+
+// `own`: the person's file manager, named or not; else the platform's.
+const fileManagerName = (platform, own) => (own ? own.name || "file manager" : shellFor(platform).fileManager);
+export const revealLabel = (platform, own) => `Show in ${fileManagerName(platform, own)}`;
+export const openFolderLabel = (platform, own) => `Open in ${fileManagerName(platform, own)}`;
+export const revealError = (platform, own) => {
+  const name = fileManagerName(platform, own);
+  return `show it in ${name === "file manager" ? "the file manager" : name}`;
+};

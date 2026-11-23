@@ -515,3 +515,23 @@ test('labels name the file manager on Linux', async () => {
   assert.equal(openFolderLabel('macos'), 'Open in Finder');
   assert.equal(openFolderLabel('windows'), 'Open in Explorer');
 });
+
+// --- A file manager of the person's own ---
+
+test('pickOwnFileManager runs its command with the path after it, on any platform', async () => {
+  const { pickOwnFileManager } = await load();
+  assert.deepEqual(pickOwnFileManager({ name: 'Yazi', command: ['open-files', '--here'] }, '/repo/a b.md'), { program: 'open-files', args: ['--here', '/repo/a b.md'] });
+  assert.deepEqual(pickOwnFileManager({ name: '', command: ['nautilus'] }, '/repo'), { program: 'nautilus', args: ['/repo'] });
+});
+
+test('labels name the file manager of your own, or call it the file manager', async () => {
+  const { revealLabel, openFolderLabel, revealError } = await load();
+  for (const platform of ['macos', 'windows', 'linux']) {
+    assert.equal(revealLabel(platform, { name: 'Yazi' }), 'Show in Yazi');
+    assert.equal(openFolderLabel(platform, { name: 'Yazi' }), 'Open in Yazi');
+    assert.equal(revealError(platform, { name: 'Yazi' }), 'show it in Yazi');
+    assert.equal(revealLabel(platform, { name: '' }), 'Show in file manager');
+    assert.equal(revealError(platform, { name: '' }), 'show it in the file manager');
+  }
+  assert.equal(revealLabel('macos', null), 'Show in Finder');
+});

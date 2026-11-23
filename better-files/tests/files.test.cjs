@@ -95,7 +95,7 @@ function world({ pictures = {}, spaceFolder = '/repo', focusOn = null, storage =
     },
     openOverlay: (spec) => { overlays.push(JSON.parse(JSON.stringify(spec))); return 'ov1'; }, closeOverlay: (id) => closed.push(id),
     layout: () => live.layout, appHome: () => '/app', nextCommand: () => new Promise((resolve) => waiting.push(resolve)), watchFolder: (...args) => { watchCalls.push(args); return watchOverride ? watchOverride(...args) : new Promise(() => {}); },
-    readTextFile: async (p, options) => { if (p.endsWith('better-changes/mod.json')) return '{}'; if (p.endsWith('better-files/mod.json')) return null; if (readOverride) return readOverride(p, options); if (live.texts[p] instanceof Error) throw live.texts[p]; return live.texts[p] ?? null; },
+    readTextFile: async (p, options) => { if (p.endsWith('better-changes/mod.json')) return '{}'; if (p.endsWith('better-files/mod.json')) return live.texts[p] ?? null; if (readOverride) return readOverride(p, options); if (live.texts[p] instanceof Error) throw live.texts[p]; return live.texts[p] ?? null; },
     knownAgents: async () => known,
     hc: async (args) => { sent.push(args); return hcResult ?? { code: 0, stdout: '', stderr: '' }; },
     exec: async (bin, args, options) => {
@@ -981,6 +981,30 @@ test('the folder icon opens the whole folder in an editor or Finder, here only',
   assert.deepEqual(JSON.parse(JSON.stringify(h.execs.filter(([b]) => b === 'open'))), [['open', '-b', 'dev.zed.Zed', '/repo'], ['open', '/repo']]);
   const far = await ready({ machine: 'box', sharedInit: { 'better-files.editors': zed } });
   assert.equal(find(far.mod.render(), 'files-folder'), undefined);
+});
+
+test('a file manager of your own (settings.fileManager) takes Show in and the folder menu, named by its name', async () => {
+  const own = { name: 'Yazi', command: ['open-files', '--here'] };
+  const sidebar = await ready({ texts: { '/app/mods/better-files/mod.json': JSON.stringify({ settings: { fileManager: own } }) } });
+  assert.deepEqual(JSON.parse(JSON.stringify(sidebar.store.get('better-files.file-manager'))), own, 'the sidebar shares it for the menu');
+  find(sidebar.mod.render(), 'files-folder').handlers.open(true, sidebar.cx);
+  assert.match(strings(find(sidebar.mod.render(), 'files-folder-menu')), /Open in Yazi/);
+  click(sidebar, 'files-folder-option-finder');
+  const menu = await menuOf({ sharedInit: { 'better-files.file-manager': own } });
+  assert.match(labels(menu), /Open in default app[\s\S]*Show in Yazi/);
+  click(menu, 'files-menu-reveal');
+  await sidebar.flush();
+  await menu.flush();
+  assert.deepEqual(JSON.parse(JSON.stringify([...sidebar.execs, ...menu.execs].filter(([b]) => b === 'open-files'))), [['open-files', '--here', '/repo'], ['open-files', '--here', '/repo/b.md']]);
+  // unnamed, it is the file manager; a command with an empty part, or none, leaves the platform's own
+  const unnamed = await menuOf({ sharedInit: { 'better-files.file-manager': { name: '', command: ['open-files'] } } });
+  assert.match(labels(unnamed), /Show in file manager/);
+  for (const fileManager of [{ name: 'X', command: ['open-files', ''] }, { name: 'X', command: [] }, { name: 'X', command: 'open-files' }]) {
+    const h = await ready({ texts: { '/app/mods/better-files/mod.json': JSON.stringify({ settings: { fileManager } }) } });
+    assert.equal(h.store.get('better-files.file-manager'), null);
+  }
+  const plain = await menuOf({ sharedInit: { 'better-files.file-manager': null } });
+  assert.match(labels(plain), /Show in Finder/);
 });
 
 test('only editors that are installed are found', async () => {
