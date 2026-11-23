@@ -7,9 +7,10 @@ const path = require("node:path");
 const vm = require("node:vm");
 const root = path.join(__dirname, "../mods/better-alerts");
 
-function harness({ platform = "linux", settings = null, exec, screens = {} } = {}) {
+function harness({ platform = "linux", settings = null, exec, screens = {}, checking = false } = {}) {
   const live = { agents: [], terminals: [], focused: null, active: true };
-  const ran = [], read = [], timers = [], warned = [];
+  const ran = [], read = [], timers = [], warned = [], badges = [];
+  let settingsReads = 0;
   const cx = { notify() {}, spawn(fn) { fn(cx); }, timer: { every: (ms, fn) => timers.push({ ms, fn }) } };
   const context = {
     View: class {},
@@ -19,8 +20,13 @@ function harness({ platform = "linux", settings = null, exec, screens = {} } = {
     focused: () => live.focused,
     window: () => ({ platform, active: live.active }),
     appHome: () => "/app",
+    checking: () => checking,
+    setBadge: (text) => badges.push(text),
     hc: async (args) => (read.push(args), screens[args[1]] == null ? { code: 1, stdout: "", stderr: "no such terminal" } : { code: 0, stdout: screens[args[1]], stderr: "" }),
-    readTextFile: async () => (settings ? JSON.stringify({ settings }) : null),
+    readTextFile: async () => {
+      settingsReads++;
+      return settings ? JSON.stringify({ settings }) : null;
+    },
     exec: exec ?? (async (bin, args) => (ran.push([bin, ...args]), { code: 0, stdout: "", stderr: "" })),
     console: { ...console, warn: (m) => warned.push(m) },
   };
@@ -46,7 +52,7 @@ function harness({ platform = "linux", settings = null, exec, screens = {} } = {
   const tick = async () => { timers.forEach((t) => t.fn(cx)); await settle(); };
   // The notifications posted: [title, body, target] from the detached script's arguments.
   const posted = () => ran.map((r) => r.slice(-3)).map(([title, body, target]) => ({ title, body, target: JSON.parse(target) }));
-  return { live, ran, read, timers, warned, agent, start, tick, posted, cx, context };
+  return { live, ran, read, timers, warned, badges, get settingsReads() { return settingsReads; }, agent, start, tick, posted, cx, context };
 }
 function settle() {
   return new Promise((done) => setImmediate(done));
@@ -154,7 +160,51 @@ test("on Windows it does nothing; on Linux and macOS it checks twice a second; i
     const on = harness({ platform });
     on.start();
     assert.deepEqual(on.timers.map((t) => t.ms), [500]);
+    assert.deepEqual(on.badges, platform === "macos" ? [null] : []);
   }
+});
+
+test("check mode reads no settings and starts no timers, notifications or badges", () => {
+  const h = harness({ platform: "macos", checking: true });
+  h.live.agents = [h.agent("t1", "blocked")];
+  const mod = h.start();
+  assert.equal(h.settingsReads, 0);
+  assert.equal(h.timers.length, 0);
+  assert.deepEqual(h.ran, []);
+  assert.deepEqual(h.badges, []);
+  assert.deepEqual(mod.render(), { kind: "div" });
+});
+
+test("the macOS Dock badge counts blocked top-level agents and clears when none remain", async () => {
+  const h = harness({ platform: "macos" });
+  h.live.agents = [
+    h.agent("t1", "blocked"),
+    h.agent("t2", "blocked"),
+    h.agent("child", "blocked"),
+  ];
+  h.live.terminals = [{ address: "child", parent: "t1" }];
+  const mod = h.start();
+  await settle();
+  assert.deepEqual(h.badges, ["2"]);
+
+  h.live.agents = [
+    h.agent("t1", "blocked"),
+    h.agent("t2", "working"),
+    h.agent("child", "blocked"),
+  ];
+  await h.tick();
+  assert.deepEqual(h.badges, ["2", "1"]);
+
+  h.live.agents = [
+    h.agent("t1", "working"),
+    h.agent("t2", "working"),
+    h.agent("child", "blocked"),
+  ];
+  await h.tick();
+  assert.deepEqual(h.badges, ["2", "1", null]);
+  await h.tick();
+  assert.deepEqual(h.badges, ["2", "1", null]);
+  assert.equal(typeof mod.check, "function");
 });
 
 test("on macOS HerdrAlerts.app posts it, with the tab on its own line, and osascript stands in until it's built", async () => {
@@ -257,6 +307,7 @@ test("the mod ships its manifest, schema and settings, and docks nowhere", async
   const manifest = JSON.parse(fs.readFileSync(path.join(root, "mod.json"), "utf8"));
   assert.equal(manifest.place, "none");
   assert.equal(manifest.title, "Better Alerts");
+  assert.equal(manifest.version, "1.2.0");
   assert.equal(manifest.$schema, "./mod.schema.json");
   const schema = JSON.parse(fs.readFileSync(path.join(root, "mod.schema.json"), "utf8"));
   assert.deepEqual(Object.keys(schema.properties.settings.properties.alerts.properties), ["blocked", "done"]);

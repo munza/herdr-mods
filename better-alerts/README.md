@@ -46,6 +46,7 @@ From a clone of the repository, `sync.sh` copies `mods/better-alerts/` into Herd
 - **What it says:** the title is whose, in which space, and its status, like `Claude Code / lantern-app - NEEDS YOU` or `Codex / trail-notes - DONE`. Under it is the tab, like `Fix the login form`. Then the message: the question an agent that needs you is asking, like `Do you want to make this edit to login.js?`, or how a finished agent's last reply began, cut to about two lines.
 - A tab named like its space, or only by its number, is left out. When the screen holds no question or reply, the message is left out.
 - On macOS, the alerts from one agent stack together in Notification Centre.
+- On macOS, the Dock badge counts blocked agents, excluding sub-agents, and clears when none remain.
 - Sub-agents stay quiet; their parent speaks for them. Agents already waiting when Herdr starts don't post.
 - Herdr's own in-app toasts are unchanged.
 
