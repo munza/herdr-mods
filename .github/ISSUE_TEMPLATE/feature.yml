@@ -1,0 +1,59 @@
+name: Feature request
+description: Suggest something a mod should do, or a new mod.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Herdr is a place to direct agents, not an editor. The best ideas help someone see what needs attention, hand it to an agent, check the result, or merge it. See [What belongs here](https://github.com/munza/herdr-mods/blob/main/CONTRIBUTING.md#what-belongs-here).
+
+        Like an idea that's already here? Give it a 👍 instead of opening a new one.
+  - type: dropdown
+    id: mod
+    attributes:
+      label: Mod
+      description: Which mod is it about? Estro is the layout that installs them all.
+      options:
+        - Better Changes
+        - Better Files
+        - Better Sidebar
+        - Better Tabs
+        - Better Config
+        - Better Icons
+        - Better Alerts
+        - Better Search
+        - Branch PR
+        - Branch Issue
+        - Estro
+        - Not sure, or several
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What should it do?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why does it belong here?
+      description: What it helps you do while directing agents, and how you do it today.
+    validations:
+      required: true
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Building it
+      options:
+        - label: I'd like to build this myself
+          required: false
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: "I confirm that:"
+      options:
+        - label: I searched the open and closed issues, and this isn't one of them
+          required: true
+        - label: I checked this myself. If an AI tool helped, I've confirmed what it found and edited what it wrote ([AI tools](https://github.com/munza/herdr-mods/blob/main/CODE_OF_CONDUCT.md#ai-tools))
+          required: true

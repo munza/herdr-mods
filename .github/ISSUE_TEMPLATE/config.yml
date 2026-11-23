@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Docs
+    url: https://munza.github.io/herdr-mods/
+    about: Install, settings and updates for every mod.
+  - name: Report a vulnerability
+    url: https://github.com/munza/herdr-mods/security/advisories/new
+    about: Privately, never in a public issue. See SECURITY.md.

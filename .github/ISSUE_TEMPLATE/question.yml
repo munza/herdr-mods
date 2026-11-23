@@ -1,0 +1,46 @@
+name: Question
+description: Ask how to install, set up or use a mod.
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The [docs](https://munza.github.io/herdr-mods/) cover installing, settings and updating each mod. If they don't answer it, ask here.
+  - type: dropdown
+    id: mod
+    attributes:
+      label: Mod
+      description: Which mod is it about? Estro is the layout that installs them all.
+      options:
+        - Better Changes
+        - Better Files
+        - Better Sidebar
+        - Better Tabs
+        - Better Config
+        - Better Icons
+        - Better Alerts
+        - Better Search
+        - Branch PR
+        - Branch Issue
+        - Estro
+        - Not sure, or several
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What you're trying to do, and what you've tried.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      multiple: true
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: false

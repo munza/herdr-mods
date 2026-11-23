@@ -1,0 +1,4 @@
+# LF everywhere, so a checkout on Windows doesn't break sync.sh or the tests that compare text.
+* text=auto eol=lf
+*.png binary
+*.gif binary

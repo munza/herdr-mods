@@ -1,0 +1,31 @@
+# Labels an issue from its form's answers: "Mod" adds mod:<slug>, "Platform" adds
+# platform:<name>. A form can only apply fixed labels itself. API calls only, no checkout.
+name: Issue labels
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const body = context.payload.issue.body ?? "";
+            // A form's answer sits under its "### <label>" heading.
+            const answer = (label) => body.match(new RegExp(`^### ${label}\\s*\\n+([^#]*)`, "m"))?.[1].trim() ?? "";
+            const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+            const wanted = [];
+            const mod = answer("Mod");
+            if (mod && !/not sure/i.test(mod) && mod !== "_No response_") wanted.push(`mod:${slug(mod)}`);
+            for (const p of answer("Platform").split(",").map((s) => s.trim()))
+              if (["macOS", "Windows", "Linux"].includes(p)) wanted.push(`platform:${p.toLowerCase()}`);
+            const existing = new Set((await github.paginate(github.rest.issues.listLabelsForRepo, { ...context.repo, per_page: 100 })).map((l) => l.name));
+            const labels = wanted.filter((l) => existing.has(l));
+            for (const l of wanted.filter((l) => !existing.has(l))) core.warning(`No label ${l} in this repository`);
+            if (labels.length) await github.rest.issues.addLabels({ ...context.repo, issue_number: context.issue.number, labels });

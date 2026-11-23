@@ -1,0 +1,36 @@
+# PRs are squash-merged, so the title becomes the commit on main. This checks it
+# reads `type(mod): what it does`, as CONTRIBUTING.md asks.
+# pull_request_target so it also runs for forks without a maintainer's approval;
+# safe, as it only reads the title: no checkout, no code from the PR.
+name: PR title
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  check:
+    name: PR title
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const title = context.payload.pull_request.title;
+            const types = ["feat", "fix", "refactor", "test", "docs", "ci", "chore"];
+            const m = title.match(/^([a-z]+)(\(([a-z0-9-]+)\))?!?: (.+)$/);
+            const problems = [];
+            if (!m) problems.push("It should read `type(mod): what it does`, such as `fix(better-files): fetch preview badges on Windows`.");
+            else {
+              if (!types.includes(m[1])) problems.push(`\`${m[1]}\` isn't a type. Use one of ${types.map((t) => `\`${t}\``).join(", ")}.`);
+              if (/[.]$/.test(m[4])) problems.push("Leave off the full stop at the end.");
+            }
+            if (problems.length) {
+              core.summary.addRaw(`**PR title:** ${title}\n\n${problems.map((p) => `- ${p}`).join("\n")}\n\nSee [Pull requests](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/CONTRIBUTING.md#pull-requests) in CONTRIBUTING.md. Editing the title re-runs this check.`);
+              await core.summary.write();
+              core.setFailed(problems.join(" "));
+            }

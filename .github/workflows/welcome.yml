@@ -1,0 +1,33 @@
+# Greets a first-time contributor's pull request and says what happens next.
+# pull_request_target so it can comment on forks; safe, as it only calls the
+# API: no checkout, no code from the PR.
+name: Welcome
+
+on:
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  welcome:
+    if: contains(fromJSON('["FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER", "NONE"]'), github.event.pull_request.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const repo = `https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main`;
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: [
+                "Thanks for your first pull request here!",
+                "",
+                "- The tests wait for a maintainer to approve the run, since this is your first PR. Run them locally meanwhile: the commands are in [CONTRIBUTING.md](" + repo + "/CONTRIBUTING.md#test).",
+                "- Please fill in every section of the PR template, with a before and after for anything visual.",
+                "- The title becomes the commit on `main`, so it should read `type(mod): what it does`. A check tells you if it doesn't.",
+              ].join("\n"),
+            });

@@ -1,0 +1,80 @@
+name: Bug report
+description: Something in a mod doesn't work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. A vulnerability goes through [SECURITY.md](https://github.com/munza/herdr-mods/blob/main/SECURITY.md), not here.
+  - type: dropdown
+    id: mod
+    attributes:
+      label: Mod
+      description: Which mod is it about? Estro is the layout that installs them all.
+      options:
+        - Better Changes
+        - Better Files
+        - Better Sidebar
+        - Better Tabs
+        - Better Config
+        - Better Icons
+        - Better Alerts
+        - Better Search
+        - Branch PR
+        - Branch Issue
+        - Estro
+        - Not sure, or several
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      multiple: true
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Herdr's version (Herdr → About, or `herdr-app --version`), and the mod's, from `version` in its installed `mod.json`.
+      placeholder: Herdr 0.1.16, Better Files 3.10.0
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots, recording or error
+      description: Drag in a screenshot or screen recording, or paste the error the mod shows. Optional, but it speeds things up a lot.
+    validations:
+      required: false
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: "I confirm that:"
+      options:
+        - label: I searched the open and closed issues, and this isn't one of them
+          required: true
+        - label: I checked this myself. If an AI tool helped, I've confirmed what it found and edited what it wrote ([AI tools](https://github.com/munza/herdr-mods/blob/main/CODE_OF_CONDUCT.md#ai-tools))
+          required: true

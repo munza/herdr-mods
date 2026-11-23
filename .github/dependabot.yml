@@ -1,0 +1,13 @@
+# Keeps the workflows' actions current. The mods have no packages, and the Go helpers use only the standard library.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: chore
+      include: scope

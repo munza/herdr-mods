@@ -1,6 +1,7 @@
-# Runs every mod's tests and the site's on each pull request and push to main.
-# The tests stub Herdr's API, so they need only Node. `herdr-app check` needs
-# the app and still runs locally.
+# Runs every mod's tests and the site's on each pull request and push to main,
+# plus the Go helpers' tests and a compile of the Swift helper. The Node tests
+# stub Herdr's API, so they need only Node. `herdr-app check` needs the app and
+# still runs locally.
 name: Tests
 
 on:
@@ -12,16 +13,52 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels its older run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  test:
+  node:
+    name: Node (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: 24
       - run: node --test */tests/*.test.cjs site/tests/*.test.cjs
+
+  go:
+    name: Go helpers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        helper: [branch-pr/helper, branch-issue/helper]
+    defaults:
+      run:
+        working-directory: ${{ matrix.helper }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ matrix.helper }}/go.mod
+          cache: false
+      - run: test -z "$(gofmt -l .)" || { gofmt -l .; echo "Run gofmt -w on the files above." >&2; exit 1; }
+      - run: go vet ./...
+      - run: go test ./...
+
+  swift:
+    name: Swift helper
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - run: swiftc -typecheck better-alerts/helper/main.swift
