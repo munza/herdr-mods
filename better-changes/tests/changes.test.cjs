@@ -154,7 +154,9 @@ function load(cwd, { props, saved, home = "/nonexistent", tree, calls = [], loca
 }
 
 function repo() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "better-changes-"));
+  // The real path: macOS's temp folder is under /var, a symlink to /private/var, and Git
+  // reports the folder it resolves to, so a watch on the repository's root has that path.
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "better-changes-")));
   const git = (...args) =>
     execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: "pipe" });
   git("init", "-q", "-b", "main");
