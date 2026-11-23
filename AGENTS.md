@@ -13,6 +13,7 @@ Herdr is an agent environment, not an IDE. Keep what helps a person see what nee
 - **Platform code goes behind the seam.** Shell commands in Better Files live in `files/shell/<platform>.js`. A view or action calls `pick*` from `files/shell.js`, never `exec("sh", …)` with its own platform check.
 - **A README is the source of a site page.** `site/markdown.cjs` supports only the Markdown the READMEs already use, and the build fails on anything else, with its line. Run `node site/build.cjs` after editing a mod's README. Generated pages are never committed.
 - **RECIPE.md is read by the agent that installs the mod.** When a change alters what's installed (files, keys, layout blocks, a helper's build), update the RECIPE in the same PR.
+- **CI job names are required checks.** `.github/rulesets/main.json` is an export of `main`'s ruleset, which requires the jobs by name. Renaming or adding a job in a workflow means updating the ruleset in Settings → Rules and exporting it again in the same PR; a renamed job otherwise blocks every PR.
 - **Settings live in three places that a test keeps in step:** `mod.schema.json`, the code's `DEFAULT_SETTINGS`, and the README's settings table.
 
 ## Writing

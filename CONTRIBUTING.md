@@ -47,7 +47,7 @@ node site/build.cjs
 herdr-app check <mod>/mods/<mod>
 ```
 
-CI runs the Node tests on Ubuntu and macOS for every pull request, plus `gofmt`, `go vet` and `go test` for the Go helpers and a compile of the Swift helper. A first-time contributor's run waits for a maintainer to approve it, so run them locally too. A test that runs a real shell script on another platform should skip where that platform's tools are missing, as Better Files' Linux and Windows tests do.
+CI runs the Node tests on Ubuntu and macOS for every pull request, plus `gofmt`, `go vet` and `go test` for the Go helpers and a compile of the Swift helper. These checks, the site build and the PR title check must pass before a PR can merge; [.github/rulesets/main.json](.github/rulesets/main.json) holds the rules for `main`. A first-time contributor's run waits for a maintainer to approve it, so run them locally too. A test that runs a real shell script on another platform should skip where that platform's tools are missing, as Better Files' Linux and Windows tests do.
 
 ## Pull requests
 
