@@ -1,4 +1,4 @@
-// The world outside Herdr: code editors, Finder/Explorer. This computer only: a
+// The world outside Herdr: code editors, Finder/Explorer/the file manager. This computer only: a
 // path on another machine means nothing to an app here.
 import { appHome, exec, knownAgents, readTextFile, setShared, shared, window } from "herdr";
 import { EDITORS } from "../files/model.js";
@@ -15,14 +15,15 @@ const ERROR = "better-files.error";
 
 export const foundEditors = () => shared(FOUND) ?? [];
 
-// macOS entries are known by app ID, Windows ones by their exe.
+// macOS entries are known by app ID, Windows and Linux ones by their program's path.
 export const editorId = (e) => e.bundle ?? e.exe;
 
 export const outsideMethods = {
   // macOS: one lookup per app ID, done once: Spotlight knows apps wherever they're
   // installed. Windows: one PowerShell process probes App Paths, PATH, and well-known
-  // dirs for every candidate; first hit wins. Both store { name, bundle } or
-  // { name, exe } entries in shared state.
+  // dirs for every candidate; first hit wins. Linux: one sh process looks each editor's
+  // commands up on PATH. They store { name, bundle } or { name, exe } entries in shared
+  // state.
   findEditors(cx, extra = []) {
     const pick = pickDetectEditors(EDITORS, extra, window()?.platform);
     cx.spawn(async (cx) => {

@@ -8,7 +8,7 @@ const path = require('node:path');
 const root = path.join(__dirname, '../mods/better-files');
 // shell.js and the platform files it picks from, as one module: a data: URL can't
 // resolve relative imports, so they're taken out and the files joined.
-const SHELL_FILES = ['files/shell/posix.js', 'files/shell/macos.js', 'files/shell/windows.js', 'files/shell.js'];
+const SHELL_FILES = ['files/shell/posix.js', 'files/shell/macos.js', 'files/shell/windows.js', 'files/shell/linux.js', 'files/shell.js'];
 const load = () =>
   import(`data:text/javascript,${encodeURIComponent(SHELL_FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n').replace(/^import\s+[\s\S]*?;$/gm, '').replace(/^export \{[^}]*\};$/gm, ''))}`);
 
@@ -238,11 +238,11 @@ test('revealError is platform-dependent', async () => {
 // --- pickDetectEditors ---
 
 const EDITORS = [
-  { name: 'Zed', bundle: 'dev.zed.Zed', exe: 'Zed.exe' },
-  { name: 'VS Code', bundle: 'com.microsoft.VSCode', exe: 'Code.exe' },
-  { name: 'Cursor', bundle: 'com.todesktop.230313mzl4w4u92', exe: 'Cursor.exe' },
-  { name: 'Windsurf', bundle: 'com.exafunction.windsurf', exe: 'Windsurf.exe' },
-  { name: 'Sublime Text', bundle: 'com.sublimetext.4', exe: 'sublime_text.exe' },
+  { name: 'Zed', bundle: 'dev.zed.Zed', exe: 'Zed.exe', bins: ['zeditor', 'zed'] },
+  { name: 'VS Code', bundle: 'com.microsoft.VSCode', exe: 'Code.exe', bins: ['code', 'code-oss'] },
+  { name: 'Cursor', bundle: 'com.todesktop.230313mzl4w4u92', exe: 'Cursor.exe', bins: ['cursor'] },
+  { name: 'Windsurf', bundle: 'com.exafunction.windsurf', exe: 'Windsurf.exe', bins: ['windsurf'] },
+  { name: 'Sublime Text', bundle: 'com.sublimetext.4', exe: 'sublime_text.exe', bins: ['subl'] },
   { name: 'Nova', bundle: 'com.panic.Nova' },
 ];
 
@@ -306,4 +306,155 @@ test('pickDetectEditors windows passes through extra editors on macOS too', asyn
   const r = pickDetectEditors(EDITORS, extra, 'macos');
   assert.equal(r.probes.length, 7);
   assert.ok(r.probes.some(p => p.editor.name === 'Emacs'));
+});
+
+// --- Linux ---
+// The Linux scripts run for real, against stand-ins on a PATH of their own, so these
+// pass on macOS too. The xdg-open fallback needs setsid and is skipped without it.
+
+const os = require('node:os');
+const { spawnSync } = require('node:child_process');
+
+// A PATH holding only the given stand-ins, each logging its arguments to `log`.
+function stubs(programs, links = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bf-linux-'));
+  const bin = path.join(dir, 'bin');
+  fs.mkdirSync(bin);
+  for (const [name, body] of Object.entries(programs)) {
+    fs.writeFileSync(path.join(bin, name), `#!/bin/sh\nprintf '%s %s\\n' "\${0##*/}" "$*" >> "$LOG"\n${body}\n`, { mode: 0o755 });
+  }
+  for (const [name, target] of Object.entries(links)) fs.symlinkSync(target, path.join(bin, name));
+  const log = path.join(dir, 'log');
+  const run = (pick) => {
+    assert.equal(pick.program, 'sh');
+    return spawnSync('/bin/sh', pick.args, { encoding: 'utf8', env: { PATH: bin, LOG: log } });
+  };
+  const logged = () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '');
+  return { dir, bin, run, logged };
+}
+
+const pairs = (stdout) => {
+  const fields = stdout.split('\0');
+  const out = [];
+  for (let i = 0; i + 1 < fields.length; i += 2) out.push([fields[i], fields[i + 1]]);
+  return out;
+};
+
+test('pickDetectEditors linux looks each editor up on PATH, first command found wins', async () => {
+  const { pickDetectEditors } = await load();
+  const r = pickDetectEditors(EDITORS, [], 'linux');
+  assert.equal(r.kind, 'single');
+  assert.equal(r.program, 'sh');
+  assert.deepEqual(r.args.slice(2), [
+    'editors',
+    'Zed', 'zeditor zed',
+    'VS Code', 'code code-oss',
+    'Cursor', 'cursor',
+    'Windsurf', 'windsurf',
+    'Sublime Text', 'subl',
+  ]);
+  const s = stubs({ zed: 'exit 0', 'code-oss': 'exit 0', subl: 'exit 0' });
+  const found = s.run(r);
+  assert.equal(found.status, 0);
+  assert.deepEqual(pairs(found.stdout), [
+    ['Zed', path.join(s.bin, 'zed')],
+    ['VS Code', path.join(s.bin, 'code-oss')],
+    ['Sublime Text', path.join(s.bin, 'subl')],
+  ]);
+  const both = stubs({ zeditor: 'exit 0', zed: 'exit 0' });
+  assert.deepEqual(pairs(both.run(r).stdout), [['Zed', path.join(both.bin, 'zeditor')]]);
+  assert.deepEqual(pairs(stubs({}).run(r).stdout), [], 'none installed finds none, and still exits 0');
+});
+
+test('pickDetectEditors linux adds extra editors with bins, and only plain command names', async () => {
+  const { pickDetectEditors } = await load();
+  const extra = [
+    { name: 'Helix', bins: ['hx'] },
+    { name: 'Emacs', bundle: 'org.gnu.Emacs' },
+    { name: 'Odd', bins: ['x; touch pwned', '$(id)', '../hx', '-v'] },
+  ];
+  const r = pickDetectEditors(EDITORS, extra, 'linux');
+  assert.deepEqual(r.args.slice(-2), ['Helix', 'hx']);
+  assert.ok(!r.args.includes('Emacs') && !r.args.includes('Odd') && !r.args.includes('Nova'));
+});
+
+test('pickOpenInEditor linux runs the program found, with the path as one argument', async () => {
+  const { pickOpenInEditor } = await load();
+  const r = pickOpenInEditor({ name: 'Zed', exe: '/usr/bin/zeditor' }, '/repo/a b.js', 'linux');
+  assert.deepEqual(r, { program: '/usr/bin/zeditor', args: ['/repo/a b.js'] });
+});
+
+test('pickOpenWithDefault linux hands the file to gio open', async () => {
+  const { pickOpenWithDefault } = await load();
+  const s = stubs({ gio: 'exit 0', 'xdg-open': 'exit 0' });
+  const file = path.join(s.dir, 'a b.txt');
+  fs.writeFileSync(file, '');
+  const r = s.run(pickOpenWithDefault(file, 'linux'));
+  assert.equal(r.status, 0);
+  assert.equal(s.logged(), `gio open ${file}\n`);
+});
+
+test('pickOpenWithDefault linux says so when the file is gone, or nothing can open it', async () => {
+  const { pickOpenWithDefault } = await load();
+  const s = stubs({ gio: 'exit 0' });
+  const gone = s.run(pickOpenWithDefault(path.join(s.dir, 'gone.txt'), 'linux'));
+  assert.equal(gone.status, 1);
+  assert.equal(gone.stderr.trim(), 'It is no longer there.');
+  assert.equal(s.logged(), '');
+  const bare = stubs({});
+  const none = bare.run(pickOpenWithDefault(bare.dir, 'linux'));
+  assert.equal(none.status, 1);
+  assert.match(none.stderr, /Neither gio nor xdg-open is installed/);
+});
+
+const setsid = spawnSync('/bin/sh', ['-c', 'command -v setsid'], { encoding: 'utf8' }).stdout.trim();
+
+test('pickOpenWithDefault linux without gio starts xdg-open in its own session', { skip: !setsid && 'needs setsid' }, async () => {
+  const { pickOpenWithDefault } = await load();
+  const s = stubs({ 'xdg-open': 'exit 0' }, { setsid });
+  const r = s.run(pickOpenWithDefault(s.dir, 'linux'));
+  assert.equal(r.status, 0);
+  for (let i = 0; i < 100 && !s.logged(); i++) await new Promise((done) => setTimeout(done, 20));
+  assert.equal(s.logged(), `xdg-open ${s.dir}\n`);
+});
+
+test('pickReveal linux asks the file manager to show the item, by its URI', async () => {
+  const { pickReveal } = await load();
+  const s = stubs({ 'dbus-send': 'exit 0', gio: 'exit 0' });
+  const folder = path.join(s.dir, 'a b,c');
+  fs.mkdirSync(folder);
+  const file = path.join(folder, 'ü.txt');
+  fs.writeFileSync(file, '');
+  const r = s.run(pickReveal(file, 'linux'));
+  assert.equal(r.status, 0);
+  const uri = 'file://' + file.split('/').map(encodeURIComponent).join('/');
+  assert.ok(uri.endsWith('/a%20b%2Cc/%C3%BC.txt'), 'a comma would split dbus-send\'s array');
+  assert.equal(s.logged(), `dbus-send --session --print-reply --dest=org.freedesktop.FileManager1 --type=method_call /org/freedesktop/FileManager1 org.freedesktop.FileManager1.ShowItems array:string:${uri} string:\n`);
+});
+
+test('pickReveal linux opens the folder when no file manager answers, and says when it is gone', async () => {
+  const { pickReveal } = await load();
+  const s = stubs({ 'dbus-send': 'exit 1', gio: 'exit 0' });
+  const file = path.join(s.dir, 'a.txt');
+  fs.writeFileSync(file, '');
+  assert.equal(s.run(pickReveal(file, 'linux')).status, 0);
+  assert.match(s.logged(), new RegExp(`^dbus-send .*\\ngio open ${s.dir}\\n$`));
+  const gone = s.run(pickReveal(path.join(s.dir, 'gone.txt'), 'linux'));
+  assert.equal(gone.status, 1);
+  assert.equal(gone.stderr.trim(), 'It is no longer there.');
+});
+
+test('fileUri percent-encodes each part of the path', async () => {
+  const { fileUri } = await load();
+  assert.equal(fileUri('/home/me/a b,c/#1?.md'), 'file:///home/me/a%20b%2Cc/%231%3F.md');
+  assert.equal(fileUri('/'), 'file:///');
+});
+
+test('labels name the file manager on Linux', async () => {
+  const { revealLabel, openFolderLabel, revealError } = await load();
+  assert.equal(revealLabel('linux'), 'Show in file manager');
+  assert.equal(openFolderLabel('linux'), 'Open in file manager');
+  assert.equal(revealError('linux'), 'show it in the file manager');
+  assert.equal(openFolderLabel('macos'), 'Open in Finder');
+  assert.equal(openFolderLabel('windows'), 'Open in Explorer');
 });

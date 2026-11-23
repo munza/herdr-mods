@@ -131,7 +131,7 @@ export const treeMethods = {
     return out;
   },
 
-  // The whole folder on show, in an editor or Finder/Explorer. This computer's apps only.
+  // The whole folder on show, in an editor or Finder/Explorer/the file manager. This computer's apps only.
   folderMenu(t) {
     const FINDER = "finder";
     const editors = foundEditors();

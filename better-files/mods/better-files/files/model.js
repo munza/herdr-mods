@@ -5,13 +5,15 @@ export const MAX_CHARS = 400000;
 
 // Editors found by app ID: a Nix or per-user install isn't in /Applications.
 // More can be added under `settings.editors` in mod.json.
+// bins: the editor's commands on Linux, first found wins. Arch names Zed's `zeditor`
+// (with `zed` too), its own installer `zed`; Code - OSS builds name theirs `code-oss`.
 export const EDITORS = [
-  { name: "Zed", bundle: "dev.zed.Zed", exe: "Zed.exe" },
-  { name: "VS Code", bundle: "com.microsoft.VSCode", exe: "Code.exe" },
-  { name: "Cursor", bundle: "com.todesktop.230313mzl4w4u92", exe: "Cursor.exe" },
-  { name: "Windsurf", bundle: "com.exafunction.windsurf", exe: "Windsurf.exe" },
-  { name: "Sublime Text", bundle: "com.sublimetext.4", exe: "sublime_text.exe" },
-  // Nova is macOS-only, no Windows executable
+  { name: "Zed", bundle: "dev.zed.Zed", exe: "Zed.exe", bins: ["zeditor", "zed"] },
+  { name: "VS Code", bundle: "com.microsoft.VSCode", exe: "Code.exe", bins: ["code", "code-oss"] },
+  { name: "Cursor", bundle: "com.todesktop.230313mzl4w4u92", exe: "Cursor.exe", bins: ["cursor"] },
+  { name: "Windsurf", bundle: "com.exafunction.windsurf", exe: "Windsurf.exe", bins: ["windsurf"] },
+  { name: "Sublime Text", bundle: "com.sublimetext.4", exe: "sublime_text.exe", bins: ["subl"] },
+  // Nova is macOS-only, no Windows or Linux executable
   { name: "Nova", bundle: "com.panic.Nova" },
 ];
 

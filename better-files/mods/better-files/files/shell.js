@@ -6,10 +6,11 @@
 import { BUSY, COPY_IMAGE } from "./shell/posix.js";
 import { macos } from "./shell/macos.js";
 import { windows, psQuote } from "./shell/windows.js";
+import { linux, fileUri } from "./shell/linux.js";
 
-export { BUSY, COPY_IMAGE, psQuote };
+export { BUSY, COPY_IMAGE, psQuote, fileUri };
 
-const PLATFORMS = { macos, windows };
+const PLATFORMS = { macos, windows, linux };
 const shellFor = (platform) => PLATFORMS[platform] ?? macos;
 
 export const pickListing = (path, perFolder, platform) => shellFor(platform).listing(path, perFolder);
@@ -25,4 +26,4 @@ export const pickDetectEditors = (baseEditors, extra, platform) => shellFor(plat
 
 export const revealLabel = (platform) => `Show in ${shellFor(platform).fileManager}`;
 export const openFolderLabel = (platform) => `Open in ${shellFor(platform).fileManager}`;
-export const revealError = (platform) => `show it in ${shellFor(platform).fileManager}`;
+export const revealError = (platform) => `show it in ${shellFor(platform).fileManagerInText ?? shellFor(platform).fileManager}`;
