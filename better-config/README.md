@@ -123,6 +123,26 @@ The schema describes Herdr's own fields and, under `properties.settings`, each s
 
 Only these keywords are read; `oneOf`, `$ref` and the like are ignored. The shipped `mod.json` has no `settings` block: it holds only what a person changes, and the mod uses its own defaults for the rest. Every mod in this repository ships a schema, and a test checks that each `mod.json` passes it and its defaults equal the mod's code.
 
+### React to saved settings
+
+A mod can opt into a command after Better Config saves its settings. Add `"x-notify-on-save": true` at the root of that mod's `mod.schema.json`, beside `properties`, not inside `settings`.
+
+After a successful write, Better Config sends `<mod-folder>.settings-changed` through Herdr's command API. A running mod receives `settings-changed` from `nextCommand()` and can reread its own `mod.json` instead of polling:
+
+```js
+cx.spawn(async (cx) => {
+  for (;;) {
+    const command = await nextCommand();
+    if (command === "settings-changed") {
+      await this.loadSettings(); // Read and apply this mod's saved settings.
+      cx.notify();
+    }
+  }
+});
+```
+
+Import `nextCommand` from `herdr` and handle this in the mod's existing command loop if it has one. Read settings at startup too: this notification does not start a mod or its controller. Resets and restored values use the same save path; failed writes do not notify. Mods without the flag keep their current behavior. Hand edits do not send commands, and Better Config's own three-second refresh is unchanged.
+
 ### Work on the mod
 
 - `mods/better-config/main.js`: the dialog.

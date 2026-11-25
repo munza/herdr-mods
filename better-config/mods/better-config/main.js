@@ -175,6 +175,9 @@ export default class BetterConfig extends View {
           let text = mod.raw;
           for (const [key, value] of edits) text = editManifest(text, mod.fields.find((f) => f.key === key) ?? { key }, value);
           await writeTextFile(mod.path, text, mod.raw);
+          if (mod.schema?.["x-notify-on-save"] === true) {
+            run(`${name}.settings-changed`);
+          }
           // The copy follows at once, so a reset never reads as a loss.
           mod.raw = text;
           mod.manifest = JSON.parse(text);
