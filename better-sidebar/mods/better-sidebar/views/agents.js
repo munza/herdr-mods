@@ -80,7 +80,10 @@ const SORTS = [
   { id: "parent", label: "Grouped by main space", icon: "git-branch" },
   { id: "prefix", label: "Grouped by prefix", icon: "tag" },
 ];
-const sortOf = () => SORTS.find((s) => s.id === shared("agents.sort")) ?? SORTS[0];
+const sortOf = () => {
+  const id = shared("agents.sort");
+  return SORTS.find((s) => s.id === id) ?? SORTS[0];
+};
 const SECTION = { 4: "Needs you", 3: "Done", 2: "Working", 1: "Idle" };
 const SECTION_STATUS = { 4: "blocked", 3: "done", 2: "working" };
 
@@ -134,10 +137,10 @@ function icon(p, size, color) {
 }
 
 // What a row calls an agent: its tab's title, or failing that its own.
-function agentLabel(paneByTab = new Map(), tabCounts = new Map()) {
-  const tabs = spaces().flatMap((s) => s.tabs);
+function agentLabel(paneByTab = new Map(), tabCounts = new Map(), tabById = null) {
+  const map = tabById ?? new Map(spaces().flatMap((s) => s.tabs).map((tab) => [tab.id, tab]));
   return (a) => {
-    const tab = tabs.find((candidate) => candidate.id === a.tab);
+    const tab = map.get(a.tab);
     if (!tab) return a.title || a.program?.name || "";
     const pane = paneByTab.get(tab.id);
     const many = tabCounts.get(tab.id) > 1;
@@ -240,8 +243,7 @@ export class Agents {
     return this.renderSortMenu(sortOf());
   }
 
-  sortOptions() {
-    const on = sortOf().id;
+  sortOptions(on = sortOf().id) {
     return SORTS.map((s) =>
       MenuOption({
         id: `sort-${s.id}`,
@@ -273,7 +275,7 @@ export class Agents {
         iconSize: 14,
         muted: true,
       }),
-      children: [MenuLabel("Sort agents"), ...this.sortOptions()],
+      children: [MenuLabel("Sort agents"), ...this.sortOptions(sort.id)],
     });
   }
 
@@ -281,14 +283,28 @@ export class Agents {
     run("terminal.peek", { terminal: addr });
   }
 
+  // Live sub-agents grouped by parent address so tree() builds in one pass.
+  liveChildrenMap(all) {
+    const map = new Map();
+    for (const k of all) {
+      if (k.state !== "live" || !k.parent) continue;
+      let list = map.get(k.parent);
+      if (!list) map.set(k.parent, (list = []));
+      list.push(k);
+    }
+    return map;
+  }
+
   // Live sub-agents of `addr`, depth first, each with the tree lines in front of it.
-  tree(all, addr, lead = []) {
-    const kids = all.filter((k) => k.parent === addr && k.state === "live");
+  tree(all, addr, lead = [], childrenByParent = null) {
+    const kids = childrenByParent
+      ? (childrenByParent.get(addr) ?? [])
+      : all.filter((k) => k.parent === addr && k.state === "live");
     return kids.flatMap((k, i) => {
       const last = i === kids.length - 1;
       return [
         { t: k, lines: [...lead, last ? "└" : "├"] },
-        ...this.tree(all, k.address, [...lead, last ? "" : "│"]),
+        ...this.tree(all, k.address, [...lead, last ? "" : "│"], childrenByParent),
       ];
     });
   }
@@ -431,36 +447,56 @@ export class Agents {
     this.migratePins(all);
     // A kept sub-agent (one with a pane) is in agents() too: where a tree shows
     // it, it gets no row of its own, unless it's pinned.
-    const nested = new Set(unordered.flatMap((a) => this.tree(all, a.address).map((s) => s.t.address)));
+    const childrenByParent = this.liveChildrenMap(all);
+    const nested = new Set(
+      unordered.flatMap((a) => this.tree(all, a.address, [], childrenByParent).map((s) => s.t.address)),
+    );
     const shown = unordered.filter((a) => a.pinned || !nested.has(a.address));
 
     const byPriority = sort.id === "priority";
-    const urgency = this.urgencies(shown, all);
+    const urgency = this.urgencies(shown, all, childrenByParent);
     const ordered = byPriority ? this.byUrgency(shown, urgency) : shown;
     const pinned = ordered.filter((a) => a.pinned);
     const unpinned = ordered.filter((a) => !a.pinned);
 
+    const sp = spaces();
+    const tabById = new Map();
+    for (const s of sp) {
+      for (const tab of s.tabs ?? []) tabById.set(tab.id, tab);
+    }
     const allPanes = panes();
+    const panesByTab = new Map();
+    for (const p of allPanes) {
+      let list = panesByTab.get(p.tab);
+      if (!list) panesByTab.set(p.tab, (list = []));
+      list.push(p);
+    }
     const paneByTab = new Map();
-    for (const tab of spaces().flatMap((s) => s.tabs)) {
-      const p = lead(tab, allPanes);
-      if (p) paneByTab.set(tab.id, p);
+    for (const [id, tab] of tabById) {
+      const p = lead(tab, panesByTab.get(id) ?? []);
+      if (p) paneByTab.set(id, p);
     }
     const tabCounts = new Map();
     for (const a of shown) tabCounts.set(a.tab, (tabCounts.get(a.tab) ?? 0) + 1);
-    const label = agentLabel(paneByTab, tabCounts);
+    const label = agentLabel(paneByTab, tabCounts, tabById);
     const groupOf = grouping(sort.id, label);
     const rest = groupOf ? gatherGroups(unpinned, groupOf, sort.id) : unpinned;
     const list = [...pinned, ...rest];
+    const focus = focused();
     return {
       sort,
       count: shown.length,
       all,
+      sp,
+      allPanes,
+      panesByTab,
+      childrenByParent,
       model: shown,
       now,
       byPriority,
       collapsed: narrow(),
-      shown: focused()?.agent,
+      shown: focus?.agent,
+      shownTab: focus?.tab,
       list,
       label,
       groups: this.makeGroups(pinned, rest, groupOf, byPriority, urgency),
@@ -468,9 +504,9 @@ export class Agents {
   }
 
   // An agent's urgency is its own or its most urgent sub-agent's.
-  urgencies(list, all) {
+  urgencies(list, all, childrenByParent = null) {
     const kids = (a) =>
-      this.tree(all, a.address).map((s) => RANK[kidStatus(s.t, this.listed)] ?? 0);
+      this.tree(all, a.address, [], childrenByParent).map((s) => RANK[kidStatus(s.t, this.listed)] ?? 0);
     return new Map(list.map((a) => [a.address, Math.max(this.rank(a), ...kids(a))]));
   }
 
@@ -573,7 +609,7 @@ export class Agents {
 
   agentWithSubs(a, i, view, t) {
     if (view.collapsed) return [this.railRow(a, i, t)];
-    const subs = this.tree(view.all, a.address);
+    const subs = this.tree(view.all, a.address, [], view.childrenByParent);
     const row = this.agentRow(a, subs, view, t);
     if (this.folded.has(a.address)) return [row];
     return [row, ...subs.map((s) => this.subRow(t, s, view.shown, view.byPriority))];
@@ -651,20 +687,23 @@ export class Agents {
   }
 
   // A tab with no agent, under its space in the lists view: its program and its name.
-  tabRow(w, tab, lit, t) {
-    const all = panes();
-    const l = lead(tab, all);
+  tabRow(w, tab, lit, t, view = null) {
+    const tabPanes = view?.panesByTab
+      ? (view.panesByTab.get(tab.id) ?? [])
+      : panes().filter((p) => p.tab === tab.id);
+    const l = lead(tab, tabPanes);
     // The tab's title, as Herdr's tab bar shows it.
     const name = tab.name;
     const prog = l?.program?.name;
     // A mod's pane runs no program, but any of them may publish its own icon in
     // shared("pane-heads"), as a file tab does, else the mod may publish one, as Better Tabs reads them.
-    const mods = all.filter((p) => p.tab === tab.id && p.mod);
-    const heads = shared("pane-heads") ?? {};
+    const mods = tabPanes.filter((p) => p.mod);
+    const heads = view ? (view.paneHeads ??= shared("pane-heads") ?? {}) : (shared("pane-heads") ?? {});
     const head = heads[mods.find((p) => heads[p.pane]?.icon)?.pane];
+    const icons = view ? (view.modIcons ??= shared("mod-icons") ?? {}) : (shared("mod-icons") ?? {});
     const pub = head
       ? { icon: head.icon, tint: !head.color }
-      : { icon: shared("mod-icons")?.[mods[0]?.mod], tint: true };
+      : { icon: icons[mods[0]?.mod], tint: true };
     const pic = icon(l?.program, 16, t.dim) ?? icon(pub, 16, t.dim);
     return h_flex()
       .id(`tab-${tab.id}`)

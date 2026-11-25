@@ -434,3 +434,39 @@ test("a damaged saved state does not stop the list", () => {
   assert.equal(Object.keys(mod.changed).length, 0);
   assert.equal(mod.pendingPins.length, 0);
 });
+
+test("render reads host state once and reuses pre-indexed lookups across rows", () => {
+  const { h, mod } = agents("grouped");
+  h.live.spaces = Array.from({ length: 10 }, (_, i) => ({
+    id: `sp${i}`,
+    name: `space-${i}`,
+    tabs: [{ id: `tb${i}`, name: `tab-${i}` }],
+  }));
+  h.live.agents = Array.from({ length: 10 }, (_, i) => ({
+    address: `t${i}`,
+    space: `sp${i}`,
+    space_name: `space-${i}`,
+    tab: `tb${i}`,
+    status: i % 2 ? "working" : "idle",
+    pane: `p${i}`,
+    seq: i,
+  }));
+  h.live.terminals = Array.from({ length: 10 }, (_, i) => ({
+    address: `sub${i}`,
+    parent: `t${i}`,
+    state: "live",
+    name: `helper-${i}`,
+    program: { name: "Claude Code" },
+  }));
+  const counts = { spaces: 0, panes: 0, terminals: 0, agents: 0, focused: 0, shared: 0 };
+  for (const name of Object.keys(counts)) {
+    const orig = h.context[name];
+    h.context[name] = (...args) => {
+      counts[name]++;
+      return orig(...args);
+    };
+  }
+  const tree = mod.render(cx);
+  assert.deepEqual(counts, { spaces: 1, panes: 1, terminals: 1, agents: 1, focused: 1, shared: 1 });
+  assert.ok(find(tree, "sub-sub0"));
+});
