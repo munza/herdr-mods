@@ -1038,3 +1038,64 @@ test("spaces of another machine keep their own block", () => {
   h.mod.ordered();
   assert.deepEqual(h.commands, [], "a worktree of another machine is not moved here");
 });
+
+test("render reuses one snapshot of spaces, panes, machines and shared state across rows", () => {
+  const h = harness();
+  h.live.machines = [{ name: "server", state: "connected", layout: "ready" }];
+  h.live.spaces = Array.from({ length: 12 }, (_, i) => ({
+    id: `s${i}`,
+    name: `space-${i}`,
+    folder: `/repo-${i}`,
+    active: i === 0,
+    tabs: [{ id: `t${i}`, status: "idle" }],
+  }));
+  h.live.panes = Array.from({ length: 24 }, (_, i) => ({
+    pane: `p${i}`,
+    terminal: `term-${i}`,
+    tab: `t${i % 12}`,
+    cwd: `/repo-${i % 12}`,
+    branch: `feat-${i % 12}`,
+  }));
+  for (const s of h.live.spaces) {
+    h.mod.shown.add(s.id);
+    h.observer.entries.set(JSON.stringify([null, s.folder]), {
+      prs: [{ repository: "owner/repo", number: 42, title: "Fix", state: "OPEN", statusCheckRollup: [] }],
+      branch: `feat-${s.id.slice(1)}`,
+      error: "rate limited",
+    });
+  }
+  const counts = { spaces: 0, panes: 0, machines: 0, shared: 0 };
+  for (const name of Object.keys(counts)) {
+    const orig = h.context[name];
+    h.context[name] = (...args) => {
+      counts[name]++;
+      return orig(...args);
+    };
+  }
+  const tree = h.mod.render();
+  assert.deepEqual(counts, { spaces: 1, panes: 1, machines: 1, shared: 2 });
+  assert.equal(h.mod.renderFrame, null);
+  assert.ok(text(tree).includes("#42"));
+  assert.ok(text(tree).includes("PR may be stale"));
+});
+
+test("render replaces a stale renderFrame left by an interrupted pass", () => {
+  const h = harness();
+  h.live.spaces = [{ id: "fresh", name: "fresh-space", folder: "/fresh", active: true, tabs: [] }];
+  h.mod.shown.add("fresh");
+  h.mod.renderFrame = {
+    sp: [{ id: "stale", name: "stale-space", folder: "/stale", active: true, tabs: [] }],
+    ps: [],
+    ms: [],
+    sort: { id: "manual" },
+    colors: {},
+    folderBySpace: new Map([["stale", "/stale"]]),
+    branchBySpace: new Map(),
+    checkoutKeyBySpace: new Map([["stale", '[null,"/stale"]']]),
+    statusBySpace: new Map(),
+  };
+  const tree = h.mod.render();
+  assert.equal(h.mod.renderFrame, null);
+  assert.ok(text(tree).includes("fresh-space"));
+  assert.ok(!text(tree).includes("stale-space"));
+});

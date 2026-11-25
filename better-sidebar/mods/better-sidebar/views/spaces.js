@@ -31,7 +31,10 @@ const SPACE_SORTS = [
   { id: "recent", label: "Recent", icon: "clock" },
   { id: "name", label: "Name", icon: "arrow-down-a-z" },
 ];
-const spaceSortOf = () => SPACE_SORTS.find((s) => s.id === shared("spaces.sort")) ?? SPACE_SORTS[0];
+const spaceSortOf = () => {
+  const id = shared("spaces.sort");
+  return SPACE_SORTS.find((s) => s.id === id) ?? SPACE_SORTS[0];
+};
 
 const USUAL_BRANCHES = new Set(["main", "master"]);
 const rowHeight = ({ tree }) => (tree ? 28 : 30);
@@ -90,6 +93,7 @@ export class Spaces {
     this.born = {};
     this.pressed = null;
     this.over = null;
+    this.renderFrame = null;
     // Brings the shown space and its rows into view when the shown space changes, as from a key.
     this.listScroll = ScrollHandle.new();
     this.lastShown = undefined;
@@ -385,14 +389,16 @@ export class Spaces {
 
   // Spaces in order, each worktree space moved under its main checkout's.
   ordered() {
-    const sp = spaces();
-    const ps = panes();
+    const f = this.renderFrame;
+    const sp = f?.sp ?? spaces();
+    const ps = f?.ps ?? panes();
+    const keyOf = (w) => f?.checkoutKeyBySpace.get(w.id) ?? checkoutKey(w, ps);
     const ready = (w) =>
       this.shown.has(w.id) ||
-      checkoutKey(w, ps) in this.git ||
+      keyOf(w) in this.git ||
       Date.now() - (this.born[w.id] ??= Date.now()) > 1500;
     for (const w of sp) if (!this.shown.has(w.id) && ready(w)) this.shown.add(w.id);
-    const list = sp.map((w, i) => ({ w, i, g: this.git[checkoutKey(w, ps)] ?? null }));
+    const list = sp.map((w, i) => ({ w, i, g: this.git[keyOf(w)] ?? null }));
     const mains = new Set(list.filter((r) => r.g && !r.g.linked).map((r) => r.g.repo));
     const nested = (r) => r.g?.linked && mains.has(r.g.repo);
     const out = [];
@@ -420,12 +426,13 @@ export class Spaces {
   nest(sp, out) {
     const order = sp.map((w) => w.id);
     const target = out.map((r) => r.w.id);
-    const key = JSON.stringify([order, target, machines()]);
     if (order.every((id, i) => id === target[i])) {
       this.ordering = null;
       return;
     }
-    if (this.ordering?.key === key && !this.orderingDue(Date.now())) return;
+    const ms = this.renderFrame?.ms ?? machines();
+    const key = JSON.stringify([order, target, ms]);
+    if (this.ordering?.key === key && !this.orderingDue(Date.now(), ms)) return;
     const moved = new Set();
     this.ordering = { key, at: Date.now(), machines: [] };
     for (let i = 0; i < out.length; i++) {
@@ -441,12 +448,12 @@ export class Spaces {
   // The last batch is tried again when the machines that hold the spaces can
   // answer, and not before: a write that Herdr dropped must not be repeated
   // on every redraw.
-  orderingDue(now) {
+  orderingDue(now, ms = this.renderFrame?.ms ?? machines()) {
     return (
       this.ordering &&
       now - this.ordering.at >= 1000 &&
       this.ordering.machines.every((name) =>
-        machines().some((m) => m.name === name && m.layout === "ready"),
+        ms.some((m) => m.name === name && m.layout === "ready"),
       )
     );
   }
@@ -487,7 +494,7 @@ export class Spaces {
   // keep Herdr's order. While a row is pressed the order holds still, so the row under the
   // pointer stays the one pressed.
   sorted(rows) {
-    const sort = spaceSortOf().id;
+    const sort = (this.renderFrame?.sort ?? spaceSortOf()).id;
     if (sort === "manual") {
       this.frozen = null;
       return rows;
@@ -558,11 +565,13 @@ export class Spaces {
   }
 
   machineLoading(m) {
-    const layout = machines().find((k) => k.name === m)?.layout;
+    const ms = this.renderFrame?.ms ?? machines();
+    const sp = this.renderFrame?.sp ?? spaces();
+    const layout = ms.find((k) => k.name === m)?.layout;
     return (
       layout === "loading" ||
       (!layout && this.machines.some((k) => k.name === m && k.state === "connected")) ||
-      spaces().some((s) => (s.machine ?? null) === m && !this.shown.has(s.id))
+      sp.some((s) => (s.machine ?? null) === m && !this.shown.has(s.id))
     );
   }
 
@@ -840,6 +849,16 @@ export class Spaces {
   // The branch and PR must describe the same checkout: the space's first
   // terminal, matching Herdr's space naming and worktree grouping semantics.
   checkoutStatus(w) {
+    const f = this.renderFrame;
+    if (f) {
+      if (f.statusBySpace.has(w.id)) return f.statusBySpace.get(w.id);
+      const folder = f.folderBySpace.get(w.id) ?? w.folder;
+      const branch = f.branchBySpace.get(w.id);
+      const status = this.prObserver.entries.get(prPlaceKey(w.machine, folder));
+      const out = status?.branch === branch ? status : null;
+      f.statusBySpace.set(w.id, out);
+      return out;
+    }
     const ps = panes();
     const folder = spaceFolder(w, ps);
     const tabs = new Set((w.tabs ?? []).map((tab) => tab.id));
@@ -956,7 +975,7 @@ export class Spaces {
       .rounded(8)
       .when(lit, (el) => el.bg(t.selected))
       .when(!lit, (el) => el.hover((s) => s.bg(t.hover)))
-      .when(spaceSortOf().id === "manual" && this.pressed === w.id && this.over !== w.id, (el) =>
+      .when((this.renderFrame?.sort ?? spaceSortOf()).id === "manual" && this.pressed === w.id && this.over !== w.id, (el) =>
         el.opacity(0.5),
       )
       .on_mouse_down("right", () => this.menu(w))
@@ -972,8 +991,9 @@ export class Spaces {
 
   // Where the dragged space would land.
   dropLine(w, t) {
-    const from = spaces().findIndex((s) => s.id === this.pressed);
-    const to = spaces().findIndex((s) => s.id === w.id);
+    const sp = this.renderFrame?.sp ?? spaces();
+    const from = sp.findIndex((s) => s.id === this.pressed);
+    const to = sp.findIndex((s) => s.id === w.id);
     return div()
       .absolute()
       .left(0)
@@ -1031,7 +1051,7 @@ export class Spaces {
   }
 
   avatar(w, t) {
-    const color = (shared("space.colors") ?? {})[w.id] ?? "ansi6";
+    const color = (this.renderFrame?.colors ?? shared("space.colors") ?? {})[w.id] ?? "ansi6";
     const fill = color.startsWith("#") ? color : (AVATAR_COLORS[color] ?? t[color]);
     return h_flex()
       .size(18)
@@ -1088,18 +1108,71 @@ export class Spaces {
     return (this.width ?? findNode(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
   }
 
+  // Build one host snapshot per render pass so row helpers do not re-copy panes().
+  createFrame() {
+    const sp = spaces();
+    const ps = panes();
+    const spaceByTab = new Map();
+    for (const w of sp) {
+      for (const tab of w.tabs ?? []) spaceByTab.set(tab.id, w.id);
+    }
+    const firstPaneBySpace = new Map();
+    for (const p of ps) {
+      if (!p.cwd) continue;
+      const sid = spaceByTab.get(p.tab);
+      if (sid !== undefined && !firstPaneBySpace.has(sid)) firstPaneBySpace.set(sid, p);
+    }
+    const folderBySpace = new Map();
+    const branchBySpace = new Map();
+    const checkoutKeyBySpace = new Map();
+    for (const w of sp) {
+      const firstPane = firstPaneBySpace.get(w.id);
+      const folder = firstPane?.cwd || w.folder;
+      folderBySpace.set(w.id, folder);
+      branchBySpace.set(
+        w.id,
+        firstPane?.branch ?? this.git[prPlaceKey(w.machine, folder)]?.branch,
+      );
+      checkoutKeyBySpace.set(w.id, JSON.stringify([w.machine ?? null, folder]));
+    }
+    return {
+      sp,
+      ps,
+      ms: machines(),
+      sort: spaceSortOf(),
+      colors: shared("space.colors") ?? {},
+      folderBySpace,
+      branchBySpace,
+      checkoutKeyBySpace,
+      statusBySpace: new Map(),
+    };
+  }
+
+  // Always overwrite any stale renderFrame left behind by an interrupted pass.
+  withFrame(fn, frame = null) {
+    const current = frame ?? this.createFrame();
+    this.renderFrame = current;
+    try {
+      return fn(current);
+    } finally {
+      if (this.renderFrame === current) this.renderFrame = null;
+    }
+  }
+
   render() {
     const t = theme();
-    const collapsed = this.collapsed();
-    return v_flex()
-      .id("better-sidebar-root")
-      .size_full()
-      .min_h(0)
-      .bg(t.chrome)
-      .text_size(TEXT.body)
-      .on_size_change((size, cx) => this.resized(size, cx))
-      .child(this.header(t, collapsed))
-      .child(this.body(t, collapsed));
+    return this.withFrame(() => {
+      const collapsed = this.collapsed();
+      return v_flex()
+        .id("better-sidebar-root")
+        .size_full()
+        .min_h(0)
+        .bg(t.chrome)
+        .text_size(TEXT.body)
+        .on_size_change((size, cx) => this.resized(size, cx))
+        .child(this.header(t, collapsed))
+        .child(this.renderBody(t, collapsed));
+    });
   }
 
   resized(size, cx) {
@@ -1129,7 +1202,7 @@ export class Spaces {
   }
 
   sortMenu() {
-    const sort = spaceSortOf();
+    const sort = this.renderFrame?.sort ?? spaceSortOf();
     return Menu({
       id: "space-sort-menu",
       open: this.sortOpen,
@@ -1177,7 +1250,7 @@ export class Spaces {
       .child(this.headerButtons(collapsed));
   }
 
-  body(t, collapsed) {
+  renderBody(t, collapsed) {
     const rows = [...(this.above?.() ?? []), ...this.grouped(t, collapsed)];
     this.revealShown(rows);
     return v_flex()
@@ -1199,13 +1272,18 @@ export class Spaces {
       .children(rows);
   }
 
+  body(t, collapsed, frame = null) {
+    return this.withFrame(() => this.renderBody(t, collapsed), frame);
+  }
+
   // Once per change of the shown space, as from a key: scroll its group (its row, then its tabs
   // and agents) into view. The host scrolls as little as it can, so a group above lands with
   // the space's row at the top and one below with its last row at the bottom; a group already
   // on screen stays put. A change from a press in the list doesn't scroll. A space that isn't
   // listed, as in a folded machine, waits until it is.
   revealShown(rows) {
-    const shown = spaces().find((s) => s.active)?.id ?? null;
+    const sp = this.renderFrame?.sp ?? spaces();
+    const shown = sp.find((s) => s.active)?.id ?? null;
     if (shown !== this.lastShown) {
       this.lastShown = shown;
       this.revealing = shown !== null && Date.now() - this.clickedAt > CLICK_MS;
