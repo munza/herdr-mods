@@ -86,7 +86,7 @@ async function harness({ settings = {}, tab = null, panes = [], sharedValues = {
   const mod = new context.Lists();
   mod.init({}, cx);
   while (pending.length) await Promise.all(pending.splice(0));
-  return { mod, live, stored, cx };
+  return { mod, live, stored, cx, context };
 }
 
 const find = (node, id) => (node?.id === id ? node : node?.nodes?.map((n) => find(n, id)).find(Boolean));
@@ -200,5 +200,89 @@ test("the Spaces tab offers the space sort beside New space, and Agents its own 
   const other = agentsTab.render();
   assert.equal(find(other, "space-sort-menu"), undefined);
   assert.ok(find(other, "ag-sort-menu"));
+});
+
+test("combined render reuses one spaces/panes snapshot and shared icon maps across plain tabs", async () => {
+  const manySpaces = Array.from({ length: 10 }, (_, i) => ({
+    id: `s${i}`,
+    name: `space-${i}`,
+    folder: `/repo-${i}`,
+    tabs: [
+      { id: `ag${i}`, name: `agent-${i}` },
+      { id: `pl${i}`, name: `plain-${i}` },
+    ],
+  }));
+  const manyAgents = Array.from({ length: 10 }, (_, i) => ({
+    address: `a${i}`,
+    space: `s${i}`,
+    space_name: `space-${i}`,
+    tab: `ag${i}`,
+    tab_name: `agent-${i}`,
+    program: { name: "Claude Code" },
+    status: "idle",
+    pane: `pa${i}`,
+    seq: i,
+  }));
+  const manyPanes = Array.from({ length: 10 }, (_, i) => ({
+    pane: `pp${i}`,
+    tab: `pl${i}`,
+    mod: "better-files",
+  }));
+  const sharedValues = {
+    "mod-icons": { "better-files": "mods/better-files/icons/file.svg" },
+    "pane-heads": { pp0: { icon: "mods/better-icons/icons/javascript.svg", color: true } },
+  };
+  const { mod, context } = await harness({ panes: manyPanes, sharedValues });
+  context.spaces = () => manySpaces;
+  context.agents = () => manyAgents;
+  for (const s of manySpaces) mod.spaces.shown.add(s.id);
+  const counts = { spaces: 0, panes: 0, agents: 0, terminals: 0, focused: 0, shared: 0 };
+  for (const name of Object.keys(counts)) {
+    const orig = context[name];
+    context[name] = (...args) => {
+      counts[name]++;
+      return orig(...args);
+    };
+  }
+  const tree = mod.render();
+  assert.deepEqual(counts, { spaces: 1, panes: 1, agents: 1, terminals: 1, focused: 1, shared: 6 });
+  assert.equal(mod.spaces.renderFrame, null);
+  assert.match(text(find(tree, "tab-pl0")), /image:mods\/better-icons\/icons\/javascript\.svg/);
+  assert.match(text(find(tree, "tab-pl1")), /svg:mods\/better-files\/icons\/file\.svg/);
+});
+
+test("combined render replaces a stale spaces renderFrame left by an interrupted pass", async () => {
+  const { mod, context } = await harness({
+    panes: [
+      { pane: "p-t1", terminal: "t1", tab: "a", cwd: "/shop" },
+      { pane: "p-d", terminal: "t4", tab: "d", cwd: "/shop", program: { name: "fish", shell: true } },
+    ],
+  });
+  context.spaces = () => [
+    {
+      id: "shop",
+      name: "shop",
+      folder: "/shop",
+      tabs: [
+        { id: "a", name: "a" },
+        { id: "d", name: "shop fish" },
+      ],
+    },
+  ];
+  mod.spaces.renderFrame = {
+    sp: [{ id: "shop", name: "stale-shop", folder: "/shop", tabs: [{ id: "a", name: "a" }] }],
+    ps: [{ pane: "p-t1", terminal: "t1", tab: "a", cwd: "/shop" }],
+    ms: [],
+    sort: { id: "manual" },
+    colors: {},
+    folderBySpace: new Map([["shop", "/shop"]]),
+    branchBySpace: new Map(),
+    checkoutKeyBySpace: new Map([["shop", '[null,"/shop"]']]),
+    statusBySpace: new Map(),
+  };
+  const tree = mod.render();
+  assert.equal(mod.spaces.renderFrame, null);
+  assert.ok(find(tree, "tab-d"), "new plain terminal tab appears instead of stale renderFrame");
+  assert.ok(!text(tree).includes("stale-shop"));
 });
 

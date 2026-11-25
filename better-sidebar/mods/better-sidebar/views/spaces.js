@@ -1109,9 +1109,9 @@ export class Spaces {
   }
 
   // Build one host snapshot per render pass so row helpers do not re-copy panes().
-  createFrame() {
-    const sp = spaces();
-    const ps = panes();
+  createFrame(seed = {}) {
+    const sp = seed.sp ?? spaces();
+    const ps = seed.ps ?? panes();
     const spaceByTab = new Map();
     for (const w of sp) {
       for (const tab of w.tabs ?? []) spaceByTab.set(tab.id, w.id);
