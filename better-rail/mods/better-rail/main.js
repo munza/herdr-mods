@@ -4,14 +4,24 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex } from "gpui-base";
 import { layout, props, run, setShared, shared, theme } from "herdr";
-import { buttonsOf, isActive } from "./model.js";
+import { buttonsOf, isActive, orderButtons } from "./model.js";
+import { loadSettings } from "./settings.js";
 
 const PLACEMENT_KEY = "better-tabs.toolbar";
 const RAIL_ID = "rail";
+const DEFAULT_SETTINGS = { order: [] };
 
 export default class BetterRail extends View {
   init(_props, cx) {
     this.placement = null;
+    this.order = [];
+    cx.spawn(async (later) => {
+      const { settings, problems } = await loadSettings("better-rail", DEFAULT_SETTINGS);
+      this.order = settings.order;
+      setShared("better-rail.order", this.order);
+      for (const problem of problems) console.warn(`better-rail mod.json settings: ${problem}`);
+      later.notify();
+    });
     cx.timer.after(10, (next) => this.syncPlacement(next));
     cx.timer.every(300, (next) => this.syncPlacement(next));
   }
@@ -80,7 +90,9 @@ export default class BetterRail extends View {
     if (this.placement !== "rail") return div();
     const root = layout();
     const list = v_flex().id("better-rail-list").size_full().items_center().py(8).gap(4).overflow_y_scrollbar();
-    for (const b of buttonsOf(props())) {
+    const savedOrder = shared("better-rail.order");
+    const order = Array.isArray(savedOrder) ? savedOrder : this.order;
+    for (const b of orderButtons(buttonsOf(props()), order)) {
       list.child(
         this.button(
           `rail-${b.id}`,

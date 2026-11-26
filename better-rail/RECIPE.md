@@ -76,7 +76,13 @@ The Mod settings button sits at the bottom when Better Config is installed. It o
    ```
 
    In a layout that uses Better Tabs, put this in the tabs block's `props`, or rely on the `toolbar: "rail"` setting, which hides the toolbar too.
-5. Run `herdr-app check ~/.config/herdr-app/mods/better-rail` and `herdr-app status`.
+5. Set the icon order in `~/.config/herdr-app/mods/better-rail/mod.json` if the person wants one. It is an array of button ids; ids left out keep their layout order:
+
+   ```json
+   "settings": { "order": ["files", "changes", "editor"] }
+   ```
+
+6. Run `herdr-app check ~/.config/herdr-app/mods/better-rail` and `herdr-app status`.
 
 ## Watch out
 

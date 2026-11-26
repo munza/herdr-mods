@@ -20,3 +20,18 @@ export function buttonsOf(props) {
   const list = Array.isArray(props?.buttons) ? props.buttons : [];
   return list.filter((button) => button && typeof button.id === "string" && button.action);
 }
+
+export function orderButtons(buttons, order) {
+  const rank = new Map();
+  for (const id of Array.isArray(order) ? order : []) {
+    if (typeof id === "string" && !rank.has(id)) rank.set(id, rank.size);
+  }
+  return buttons
+    .map((button, index) => ({ button, index }))
+    .sort((a, b) => {
+      const ai = rank.has(a.button.id) ? rank.get(a.button.id) : rank.size + a.index;
+      const bi = rank.has(b.button.id) ? rank.get(b.button.id) : rank.size + b.index;
+      return ai - bi;
+    })
+    .map((item) => item.button);
+}

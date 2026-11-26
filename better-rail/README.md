@@ -29,13 +29,19 @@ Better Rail copies the normal panel buttons into that block. A second 32px block
 
 ## Settings
 
-Better Rail has no settings of its own. It follows Better Tabs' `toolbar` setting:
+Better Rail has one setting, the icon order:
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `toolbar` | `tab` | `tab` keeps the panel buttons in the tab bar and hides the rail. `rail` hides the tab-bar buttons and shows the rail. |
+| `order` | `[]` | Button ids in the order to show them, such as `files, changes, editor`. Ids you leave out follow in the layout's order. |
 
-Better Config shows this under Better Tabs. By hand, add it to the installed Better Tabs `mod.json`:
+Better Config shows this under Better Tabs. Separately, Better Tabs' `toolbar` setting chooses the mode: `tab` keeps the panel buttons in the tab bar and hides the rail; `rail` hides the tab-bar buttons and shows the rail.
+
+Better Config shows `order` under Better Rail; it is a comma-separated list of button ids. By hand, add the two settings to the installed mods:
+
+```json
+"settings": { "order": ["files", "changes", "editor"] }
+```
 
 ```json
 "settings": { "toolbar": "rail" }
@@ -52,6 +58,7 @@ Copy `mods/better-rail/` into `~/.config/herdr-app/mods/better-rail/` again, or 
 - A `command` action is `{ type: "command", name, args }`; pressing it runs the same command a key would.
 - Better Tabs publishes `better-tabs.toolbar` in shared state. The rail shows itself for `rail`, and hides the layout node `rail` for `tab`.
 - The bottom block uses `props.part: "config"` and opens Better Config.
+- `order` lists button ids; unlisted buttons keep their layout order after the listed ones.
 - `main.js` draws and acts; `model.js` has the layout lookup, active check and button filter, with no Herdr imports.
 
 ```sh

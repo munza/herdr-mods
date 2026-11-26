@@ -55,6 +55,22 @@
           "minimum": 0
         }
       }
+    },
+    "settings": {
+      "type": "object",
+      "description": "Your changes. A setting left out uses its default.",
+      "additionalProperties": false,
+      "properties": {
+        "order": {
+          "title": "Icon order",
+          "description": "Button ids in the order to show them, such as files, changes, editor. Ids you leave out follow in the layout's order.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      }
     }
   }
 }

@@ -34,6 +34,14 @@ test("a panel action is active only when its container is shown and its child is
   assert.equal(isActive(tree, { type: "command", name: "app.palette" }), false);
 });
 
+test("order moves named buttons first and keeps the rest in layout order", async () => {
+  const { orderButtons } = await load();
+  const buttons = ["files", "changes", "editor", "prs", "issues"].map((id) => ({ id }));
+  assert.deepEqual(orderButtons(buttons, ["editor", "issues"]).map((b) => b.id), ["editor", "issues", "files", "changes", "prs"]);
+  assert.deepEqual(orderButtons(buttons, []).map((b) => b.id), buttons.map((b) => b.id));
+  assert.deepEqual(orderButtons(buttons, ["missing", "editor", "editor"]).map((b) => b.id), ["editor", "files", "changes", "prs", "issues"]);
+});
+
 test("buttons keep only entries a button can render", async () => {
   const { buttonsOf } = await load();
   const buttons = buttonsOf({
