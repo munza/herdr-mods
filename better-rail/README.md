@@ -51,6 +51,15 @@ Better Config shows `order` under Better Rail as a list with each button's icon,
 
 Copy `mods/better-rail/` into `~/.config/herdr-app/mods/better-rail/` again, or ask your agent to. The layout and Better Tabs' setting stay as they are.
 
+## Uninstall
+
+1. In Better Config → Better Tabs, set `toolbar` to `tab`. The panel buttons return to the tab bar and the rail hides.
+2. Remove the layout's `rail` column, including its `rail-config` block.
+3. Delete `~/.config/herdr-app/mods/better-rail/`.
+4. Reload Herdr or switch layouts. Better Sidebar sees the folder is gone and puts Mod settings back in its footer.
+
+Do not delete the folder while rail mode is still on: the tab-bar buttons stay hidden and the empty rail column remains.
+
 ## For developers
 
 - `props.buttons` is the layout's list: `{ id, label, icon, action }`.

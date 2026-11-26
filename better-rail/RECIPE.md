@@ -99,6 +99,15 @@ The Mod settings button sits at the bottom when Better Config is installed. It o
 - Mod settings appears at the bottom of the rail and opens Better Config; it is gone from Better Sidebar's footer.
 - `herdr-app check` passes and `herdr-app status` shows no mod errors.
 
+## Uninstall
+
+1. Set Better Tabs' `toolbar` setting back to `tab` in Better Config, or in `~/.config/herdr-app/mods/better-tabs/mod.json`.
+2. Remove the `rail` column and its `rail-config` block from the layout.
+3. Delete `~/.config/herdr-app/mods/better-rail/`.
+4. Reload Herdr; Better Sidebar finds the folder gone and shows Mod settings in its footer again.
+
+Leaving rail mode on while deleting the folder hides the tab-bar buttons and leaves an empty rail column.
+
 ## License
 
 Apache-2.0.
