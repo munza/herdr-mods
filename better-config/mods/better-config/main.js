@@ -561,6 +561,30 @@ export default class BetterConfig extends View {
     return buttons;
   }
 
+  orderRow(t, mod, field) {
+    const value = getPath(mod.manifest.settings, field.key);
+    const id = `${mod.name}:${field.key}`;
+    const set = (v, cx) => this.change(mod.name, [[field.key, v]], cx);
+    const changed = isChanged(field, value);
+    return v_flex()
+      .w_full()
+      .gap(12)
+      .py(14)
+      .border_b(1)
+      .border_color(t.border)
+      .child(
+        h_flex()
+          .w_full()
+          .items_center()
+          .gap(16)
+          .child(div().flex_1().text_size(14).text_color(t.foreground).child(field.title))
+          .when(changed, (el) =>
+            el.child(this.button(t, `bc-reset-${mod.name}-${field.key}`, "Reset", (cx) => this.reset(mod, field, cx))),
+          ),
+      )
+      .child(this.orderControl(t, field, value === undefined ? field.default : value, set));
+  }
+
   orderControl(t, field, shown, set) {
     const buttons = this.railButtons();
     if (!buttons.length) return div().text_size(12.5).text_color(t.dim).child("No rail buttons in this layout.");
@@ -578,40 +602,40 @@ export default class BetterConfig extends View {
     const arrow = (id, label, enabled, onClick) =>
       div()
         .id(id)
-        .size(22)
+        .size(30)
         .flex_none()
         .flex()
         .items_center()
         .justify_center()
-        .rounded(5)
-        .text_size(13)
+        .rounded(6)
+        .border_1()
+        .border_color(t.border)
+        .bg(t.raised)
+        .text_size(14)
         .text_color(enabled ? t.foreground : t.dim)
         .opacity(enabled ? 1 : 0.35)
         .tooltip(label)
         .when(enabled, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)).on_click(onClick))
         .child(label === "Move up" ? "↑" : "↓");
     return v_flex()
-      .w(300)
-      .gap(1)
-      .p(4)
-      .rounded(8)
-      .border(1)
-      .border_color(t.border)
-      .bg(t.background)
+      .w_full()
+      .gap(8)
       .children(
         ids.map((id, i) => {
           const b = byId.get(id);
           return h_flex()
             .id(`bc-order-${id}`)
             .w_full()
-            .h(26)
-            .px(4)
-            .gap(6)
+            .h(40)
+            .px(10)
+            .gap(10)
             .items_center()
-            .rounded(5)
-            .hover((s) => s.bg(t.hover))
-            .child(b.icon ? svg(b.icon).size(15).flex_none() : div().w(15).flex_none())
-            .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.foreground).child(b.label))
+            .rounded(8)
+            .border_1()
+            .border_color(t.border)
+            .bg(t.raised)
+            .child(b.icon ? svg(b.icon).size(18).flex_none() : div().w(18).flex_none())
+            .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(t.foreground).child(b.label))
             .child(arrow(`bc-order-up-${id}`, "Move up", i > 0, (_e, cx) => move(i, i - 1, cx)))
             .child(arrow(`bc-order-down-${id}`, "Move down", i < ids.length - 1, (_e, cx) => move(i, i + 1, cx)));
         }),
@@ -622,7 +646,6 @@ export default class BetterConfig extends View {
     const id = `bc-${mod.name}-${field.key}`;
     const set = (v, cx) => this.change(mod.name, [[field.key, v]], cx);
     const shown = value === undefined ? field.default : value;
-    if (mod.name === "better-rail" && field.key === "order") return this.orderControl(t, field, shown, set);
     if (field.type === "boolean") return this.toggle(t, id, shown === true, (cx) => set(!(shown === true), cx));
     if (field.type === "choice" && field.choices)
       return Object.keys(field.choices).length <= 4
@@ -643,6 +666,7 @@ export default class BetterConfig extends View {
   // One setting: what it is on the left, the control on the right, any problem under it.
   // A JSON setting's editor goes under it instead, the row's full width.
   row(t, mod, field) {
+    if (mod.name === "better-rail" && field.key === "order") return this.orderRow(t, mod, field);
     const value = getPath(mod.manifest.settings, field.key);
     const id = `${mod.name}:${field.key}`;
     const refused = this.refused[id];
