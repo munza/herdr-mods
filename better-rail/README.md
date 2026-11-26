@@ -37,7 +37,7 @@ Better Rail has one setting, the icon order:
 
 Better Config shows this under Better Tabs. Separately, Better Tabs' `toolbar` setting chooses the mode: `tab` keeps the panel buttons in the tab bar and hides the rail; `rail` hides the tab-bar buttons and shows the rail.
 
-Better Config shows `order` under Better Rail; it is a comma-separated list of button ids. By hand, add the two settings to the installed mods:
+Better Config shows `order` under Better Rail as a list with each button's icon, name and ↑/↓ controls; changes save at once. By hand, add the two settings to the installed mods:
 
 ```json
 "settings": { "order": ["files", "changes", "editor"] }

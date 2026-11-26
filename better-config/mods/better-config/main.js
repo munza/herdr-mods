@@ -545,10 +545,79 @@ export default class BetterConfig extends View {
     return this.boxFrame(t, id, box).w_full().h(JSON_HEIGHT).p(6).child(Editor.new(box.state).size_full());
   }
 
+  // Better Rail's buttons in this layout, for its order editor.
+  railButtons() {
+    const buttons = [];
+    const walk = (node) => {
+      const list = node?.content?.mod === "better-rail" && node.content.props?.buttons;
+      if (Array.isArray(list)) {
+        for (const b of list)
+          if (b?.id && b.action)
+            buttons.push({ id: b.id, label: b.label ?? b.id, icon: typeof b.icon === "string" ? b.icon : null });
+      }
+      for (const child of node?.children ?? []) walk(child);
+    };
+    walk(layout());
+    return buttons;
+  }
+
+  orderControl(t, field, shown, set) {
+    const buttons = this.railButtons();
+    if (!buttons.length) return div().text_size(12.5).text_color(t.dim).child("No rail buttons in this layout.");
+    const byId = new Map(buttons.map((b) => [b.id, b]));
+    const ids = [];
+    for (const id of Array.isArray(shown) ? shown : [])
+      if (byId.has(id) && !ids.includes(id)) ids.push(id);
+    for (const b of buttons) if (!ids.includes(b.id)) ids.push(b.id);
+    const move = (from, to, cx) => {
+      const next = ids.slice();
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      set(next, cx);
+    };
+    const arrow = (id, label, enabled, onClick) =>
+      div()
+        .id(id)
+        .size(22)
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(5)
+        .text_size(13)
+        .text_color(enabled ? t.foreground : t.dim)
+        .opacity(enabled ? 1 : 0.35)
+        .tooltip(label)
+        .when(enabled, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)).on_click(onClick))
+        .child(label === "Move up" ? "↑" : "↓");
+    return v_flex()
+      .w(300)
+      .gap(2)
+      .children(
+        ids.map((id, i) => {
+          const b = byId.get(id);
+          return h_flex()
+            .id(`bc-order-${id}`)
+            .w_full()
+            .h(28)
+            .px(6)
+            .gap(7)
+            .items_center()
+            .rounded(5)
+            .hover((s) => s.bg(t.hover))
+            .child(b.icon ? svg(b.icon).size(16).flex_none() : div().w(16).flex_none())
+            .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.foreground).child(b.label))
+            .child(arrow(`bc-order-up-${id}`, "Move up", i > 0, (_e, cx) => move(i, i - 1, cx)))
+            .child(arrow(`bc-order-down-${id}`, "Move down", i < ids.length - 1, (_e, cx) => move(i, i + 1, cx)));
+        }),
+      );
+  }
+
   control(t, mod, field, value) {
     const id = `bc-${mod.name}-${field.key}`;
     const set = (v, cx) => this.change(mod.name, [[field.key, v]], cx);
     const shown = value === undefined ? field.default : value;
+    if (mod.name === "better-rail" && field.key === "order") return this.orderControl(t, field, shown, set);
     if (field.type === "boolean") return this.toggle(t, id, shown === true, (cx) => set(!(shown === true), cx));
     if (field.type === "choice" && field.choices)
       return Object.keys(field.choices).length <= 4
