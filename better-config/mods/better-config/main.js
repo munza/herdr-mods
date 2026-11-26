@@ -592,20 +592,25 @@ export default class BetterConfig extends View {
         .child(label === "Move up" ? "↑" : "↓");
     return v_flex()
       .w(300)
-      .gap(2)
+      .gap(1)
+      .p(4)
+      .rounded(8)
+      .border(1)
+      .border_color(t.border)
+      .bg(t.background)
       .children(
         ids.map((id, i) => {
           const b = byId.get(id);
           return h_flex()
             .id(`bc-order-${id}`)
             .w_full()
-            .h(28)
-            .px(6)
-            .gap(7)
+            .h(26)
+            .px(4)
+            .gap(6)
             .items_center()
             .rounded(5)
             .hover((s) => s.bg(t.hover))
-            .child(b.icon ? svg(b.icon).size(16).flex_none() : div().w(16).flex_none())
+            .child(b.icon ? svg(b.icon).size(15).flex_none() : div().w(15).flex_none())
             .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.foreground).child(b.label))
             .child(arrow(`bc-order-up-${id}`, "Move up", i > 0, (_e, cx) => move(i, i - 1, cx)))
             .child(arrow(`bc-order-down-${id}`, "Move down", i < ids.length - 1, (_e, cx) => move(i, i + 1, cx)));
@@ -643,7 +648,7 @@ export default class BetterConfig extends View {
     const refused = this.refused[id];
     const problem = refused ?? this.notes[id] ?? problemWith(field, value);
     const changed = isChanged(field, value);
-    const about = field.description;
+    const about = mod.name === "better-rail" && field.key === "order" ? "" : field.description;
     const json = field.type === "json";
     const header = h_flex()
       .w_full()
