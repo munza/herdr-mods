@@ -92,7 +92,7 @@ export default class BetterRail extends View {
     const list = v_flex().id("better-rail-list").size_full().items_center().py(8).gap(4).overflow_y_scrollbar();
     const savedOrder = shared("better-rail.order");
     const order = Array.isArray(savedOrder) ? savedOrder : this.order;
-    for (const b of orderButtons(buttonsOf(props()), order)) {
+    for (const b of orderButtons(buttonsOf(props(), root), order)) {
       list.child(
         this.button(
           `rail-${b.id}`,

@@ -16,9 +16,18 @@ export function isActive(root, action) {
   return Boolean(panel) && !panel.hidden && stack?.active === action.target;
 }
 
-export function buttonsOf(props) {
+export function buttonsOf(props, root) {
   const list = Array.isArray(props?.buttons) ? props.buttons : [];
-  return list.filter((button) => button && typeof button.id === "string" && button.action);
+  const seen = new Set();
+  return list.filter((button) => {
+    if (!button || typeof button.id !== "string" || !button.action || seen.has(button.id)) return false;
+    if (button.when?.node) {
+      const node = find(root, button.when.node);
+      if (!node || node.hidden) return false;
+    }
+    seen.add(button.id);
+    return true;
+  });
 }
 
 export function orderButtons(buttons, order) {

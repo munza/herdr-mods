@@ -35,7 +35,7 @@ Better Rail has one setting, the icon order:
 | --- | --- | --- |
 | `order` | `[]` | Button ids in the order to show them, such as `files, changes, editor`. Ids you leave out follow in the layout's order. |
 
-Better Config shows this under Better Tabs. Separately, Better Tabs' `toolbar` setting chooses the mode: `tab` keeps the panel buttons in the tab bar and hides the rail; `rail` hides the tab-bar buttons and shows the rail.
+Separately, Better Tabs' `toolbar` setting chooses the mode: `tab` keeps the panel buttons in the tab bar and hides the rail; `rail` hides the tab-bar buttons and shows the rail.
 
 Better Config shows `order` under Better Rail as a list with each button's icon, name and ↑/↓ controls; changes save at once. By hand, add the two settings to the installed mods:
 
@@ -68,7 +68,7 @@ Do not delete the folder while rail mode is still on: the tab-bar buttons stay h
 - Better Tabs publishes `better-tabs.toolbar` in shared state. The rail shows itself for `rail`, and hides the layout node `rail` for `tab`.
 - The bottom block uses `props.part: "config"` and opens Better Config.
 - `order` lists button ids; unlisted buttons keep their layout order after the listed ones.
-- `main.js` draws and acts; `model.js` has the layout lookup, active check and button filter, with no Herdr imports.
+- `main.js` draws and acts; `model.js` has the layout lookup, active check, button filter and order, with no Herdr imports.
 
 ```sh
 ./sync.sh

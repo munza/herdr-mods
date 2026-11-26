@@ -56,16 +56,16 @@ The Mod settings button sits at the bottom when Better Config is installed. It o
                { "id": "changes", "label": "Changes", "icon": "mods/better-tabs/icons/changes.svg", "action": { "type": "panel", "container": "panel", "stack": "panel-body", "target": "changes" } }
              ]
            }
-         },
-         {
-           "id": "rail-config",
-           "type": "block",
-           "size": { "px": 32 },
-           "content": { "mod": "better-rail", "props": { "part": "config" } }
          }
-       ]
-     }
-   ]
+       },
+       {
+         "id": "rail-config",
+         "type": "block",
+         "size": { "px": 32 },
+         "content": { "mod": "better-rail", "props": { "part": "config" } }
+       }
+     ]
+   }
    ```
 
    Add every panel and command the person wants. The container and stack ids must match their layout. Give the buttons block `"size": { "weight": 1 }` so the config block stays at the bottom.

@@ -47,6 +47,7 @@ test("buttons keep only entries a button can render", async () => {
   const buttons = buttonsOf({
     buttons: [
       { id: "files", action: { type: "panel" } },
+      { id: "files", action: { type: "panel" } },
       { id: "missing-action" },
       { action: { type: "command" } },
       null,
@@ -54,4 +55,21 @@ test("buttons keep only entries a button can render", async () => {
   });
   assert.deepEqual(buttons.map((b) => b.id), ["files"]);
   assert.deepEqual(buttonsOf({}), []);
+});
+
+test("a when condition hides a button whose node is missing or hidden", async () => {
+  const { buttonsOf } = await load();
+  const root = { id: "root", children: [{ id: "shown" }, { id: "hidden", hidden: true }] };
+  const buttons = buttonsOf(
+    {
+      buttons: [
+        { id: "a", action: { type: "panel" }, when: { node: "shown" } },
+        { id: "b", action: { type: "panel" }, when: { node: "hidden" } },
+        { id: "c", action: { type: "panel" }, when: { node: "missing" } },
+        { id: "d", action: { type: "panel" } },
+      ],
+    },
+    root,
+  );
+  assert.deepEqual(buttons.map((b) => b.id), ["a", "d"]);
 });

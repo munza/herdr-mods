@@ -41,10 +41,7 @@ export function mergeSettings(defaults, given, problems = [], path = "") {
     }
     const current = defaults[key];
     if (isObject(current)) result[key] = mergeSettings(current, value, problems, name);
-    else if (
-      typeof value === typeof current ||
-      (typeof current === "string" && typeof value === "number")
-    )
+    else if (typeof value === typeof current || (typeof current === "string" && typeof value === "number"))
       result[key] = value;
     else problems.push(`${name} should be a ${typeof current}`);
   }

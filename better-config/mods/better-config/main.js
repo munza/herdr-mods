@@ -564,6 +564,8 @@ export default class BetterConfig extends View {
   orderRow(t, mod, field) {
     const value = getPath(mod.manifest.settings, field.key);
     const id = `${mod.name}:${field.key}`;
+    const refused = this.refused[id];
+    const problem = refused ?? this.notes[id] ?? problemWith(field, value);
     const set = (v, cx) => this.change(mod.name, [[field.key, v]], cx);
     const changed = isChanged(field, value);
     return v_flex()
@@ -577,8 +579,22 @@ export default class BetterConfig extends View {
           .w_full()
           .items_center()
           .gap(16)
-          .child(div().flex_1().text_size(14).text_color(t.foreground).child(field.title))
-          .when(changed, (el) =>
+          .child(
+            v_flex()
+              .flex_1()
+              .min_w(0)
+              .gap(3)
+              .child(
+                h_flex()
+                  .gap(8)
+                  .items_center()
+                  .child(div().text_size(14).text_color(t.foreground).child(field.title))
+                  .when(changed, (el) => el.child(div().w(6).h(6).rounded(3).bg(t.accent))),
+              )
+              .child(div().text_size(11.5).text_color(t.dim).font_family("JetBrains Mono").child(field.key))
+              .when(Boolean(problem), (el) => el.child(div().text_size(12.5).text_color(t.ansi1).child(problem))),
+          )
+          .when(changed || Boolean(refused), (el) =>
             el.child(this.button(t, `bc-reset-${mod.name}-${field.key}`, "Reset", (cx) => this.reset(mod, field, cx))),
           ),
       )
