@@ -7,7 +7,7 @@ const vm = require("node:vm");
 const runtime = path.join(__dirname, "../mods/better-sidebar");
 
 function element() {
-  const node = { nodes: [], handlers: {} };
+  const node = { nodes: [], handlers: {}, background: undefined };
   const proxy = new Proxy(node, {
     get(target, key) {
       if (key in target) return target[key];
@@ -16,6 +16,7 @@ function element() {
       if (key === "when") return (c, build) => (c && build(proxy), proxy);
       return (...args) => {
         if (key === "id") target.id = args[0];
+        if (key === "bg") target.background = args[0];
         if (key === "on_click") target.handlers.click = args[0];
         return proxy;
       };
@@ -100,6 +101,144 @@ test("Spaces shows each space's tabs beneath it, as their agents where they have
   // Its tab's title, then its program, quietly.
   assert.match(text(find(mod.render(), "ag-t1")), /^\s*1\s+Claude Code/);
   assert.deepEqual(live.order, ["t1", "t3", "t2"]);
+});
+
+for (const tab of ["spaces", "agents"]) {
+  for (const agent_name of ["tab", "title"]) {
+    test(`${tab} shows the pane name until cleared in ${agent_name} mode`, async () => {
+      const { mod, live } = await harness({ tab, settings: { agent_name } });
+      const first = live.agents[0];
+      Object.assign(first, { tab_name: "Build", title: "Compiling" });
+      const second = { ...first, address: "t4", pane: "p-t4", title: "Checking", pane_name: "[tests]" };
+      live.agents.push(second);
+
+      const row = (tree, id) => text(find(tree, id)).trim().split(/\s+/)[0];
+      const tree = mod.render();
+      assert.equal(row(tree, "ag-t1"), agent_name === "tab" ? "Build" : "Compiling");
+      assert.equal(row(tree, "ag-t4"), "[tests]");
+      second.pane_name = null;
+      assert.equal(row(mod.render(), "ag-t4"), agent_name === "tab" ? "Build" : "Checking");
+    });
+  }
+}
+
+test("Spaces shows a named shell beside a named agent, in pane order, and focuses each exact pane", async () => {
+  const shell = { pane: "p-shell", terminal: "shell", tab: "a", name: "a", program: { name: "fish" }, focused: true };
+  const agent = { pane: "p-t1", terminal: "t1", tab: "a", name: "b" };
+  const other = { pane: "p-other", terminal: "other", tab: "c", name: "elsewhere", focused: true };
+  const panes = [shell, agent, other];
+  const { mod, live, context, cx } = await harness({ panes });
+  live.agents[0].pane_name = agent.name;
+  context.spaces()[0].active = true;
+  context.focused = () => ({ space: "shop", tab: "a", pane: shell.pane });
+  const calls = [];
+  context.run = (command, { pane }) => calls.push([command, pane]);
+
+  const split = (tree) => ids(tree).filter((id) => ["pane-p-shell", "ag-t1", "tab-a"].includes(id));
+  let tree = mod.render();
+  assert.deepEqual(split(tree), ["pane-p-shell", "ag-t1"]);
+  assert.match(text(find(tree, "pane-p-shell")), /^\s*a\s+fish/);
+  assert.match(text(find(tree, "ag-t1")), /^\s*b\s+Claude Code/);
+  assert.equal(find(tree, "pane-p-shell").background, "selected");
+  assert.equal(find(tree, "pane-p-other").background, undefined);
+  assert.equal(find(tree, "space-shop").background, undefined);
+  assert.deepEqual(live.order, ["t1", "t3", "t2"]);
+
+  find(tree, "pane-p-shell").handlers.click();
+  find(tree, "ag-t1").handlers.click();
+  find(tree, "pane-p-other").handlers.click();
+  assert.deepEqual(calls, [["pane.focus", shell.pane], ["pane.focus", agent.pane], ["pane.focus", other.pane]]);
+
+  // A tab remembers its pane, but only the actual window focus lights up.
+  panes.splice(0, 2, agent, shell);
+  live.agents[0].focused = true;
+  context.focused = () => ({ space: "shop", tab: "a", pane: agent.pane, agent: agent.terminal });
+  tree = mod.render();
+  assert.deepEqual(split(tree), ["ag-t1", "pane-p-shell"]);
+  assert.equal(find(tree, "ag-t1").background, "selected");
+  assert.equal(find(tree, "pane-p-shell").background, undefined);
+
+  mod.pick("agents", cx);
+  tree = mod.render();
+  assert.equal(find(tree, "pane-p-shell"), undefined);
+  assert.equal(find(tree, "pane-p-other"), undefined);
+  assert.match(text(find(tree, "lists-tab-agents")), /Agents 3/);
+});
+
+test("a named pane switches from terminal to agent and back without a duplicate", async () => {
+  const pane = { pane: "p-shell", terminal: "shell", tab: "a", name: "a", program: { name: "Codex", agent: true } };
+  const { mod, live } = await harness({ panes: [pane, { pane: "p-t1", terminal: "t1", tab: "a" }] });
+  const split = () => ids(mod.render()).filter((id) => ["pane-p-shell", "ag-shell", "ag-t1", "tab-a"].includes(id));
+  assert.deepEqual(split(), ["pane-p-shell", "ag-t1"]);
+  const agent = { ...live.agents[0], address: pane.terminal, pane: pane.pane, pane_name: pane.name };
+  live.agents.unshift(agent);
+  assert.deepEqual(split(), ["ag-shell", "ag-t1"]);
+  live.agents.shift();
+  assert.deepEqual(split(), ["pane-p-shell", "ag-t1"]);
+  pane.name = null;
+  assert.deepEqual(split(), ["ag-t1"]);
+});
+
+test("a named pinned or kept sub-agent keeps its agent row without adding a terminal row", async () => {
+  const pinned = { pane: "p-t1", terminal: "t1", tab: "a", name: "pinned" };
+  const child = { pane: "p-child", terminal: "child", tab: "a", name: "child" };
+  const quiet = { pane: "p-quiet", terminal: "quiet", tab: "a", name: "quiet child" };
+  const shell = { pane: "p-shell", terminal: "shell", tab: "a", name: "shell" };
+  const { mod, live, context } = await harness({ panes: [pinned, child, quiet, shell] });
+  Object.assign(live.agents[0], { pinned: true, pane_name: pinned.name });
+  live.agents.push({ ...live.agents[0], address: child.terminal, pane: child.pane, pane_name: child.name, pinned: false });
+  context.terminals = () => [child, quiet].map(({ terminal }) => ({ address: terminal, parent: pinned.terminal, state: "live" }));
+  context.spaces()[0].active = true;
+  context.focused = () => ({ space: "shop", tab: quiet.tab, pane: quiet.pane });
+  const tree = mod.render();
+  const drawn = ids(tree).filter((id) => /^(ag-t1|ag-child|sub-child|sub-quiet|pane-p-|tab-a)/.test(id));
+  assert.deepEqual(drawn, ["ag-t1", "sub-child", "sub-quiet", "pane-p-shell"]);
+  const quietRow = find(tree, "sub-quiet");
+  assert.match(text(quietRow), /quiet child/);
+  assert.equal(quietRow.background, "raised");
+  assert.equal(find(tree, "space-shop").background, undefined);
+  const calls = [];
+  context.run = (command, { pane }) => calls.push([command, pane]);
+  quietRow.handlers.click();
+  assert.deepEqual(calls, [["pane.focus", quiet.pane]]);
+});
+
+test("a kept sub-agent in a separate tab keeps that tab's fallback entry", async () => {
+  const pane = { pane: "p-child", terminal: "child", tab: "d", name: "child" };
+  const { mod, live, context } = await harness({ panes: [pane] });
+  live.agents.push({ ...live.agents[0], address: pane.terminal, pane: pane.pane, tab: pane.tab, pane_name: pane.name });
+  context.terminals = () => [{ address: pane.terminal, parent: "t1", state: "live" }];
+  const drawn = ids(mod.render()).filter((id) => ["ag-child", "sub-child", "pane-p-child", "tab-d"].includes(id));
+  assert.deepEqual(drawn, ["sub-child", "tab-d"]);
+});
+
+test("an unsettled shell-only tab keeps a tab row for its unnamed panes", async () => {
+  const shell = { pane: "p-shell", terminal: "shell", tab: "d", name: "named" };
+  const plain = { pane: "p-plain", terminal: "plain", tab: "d", name: null };
+  const panes = [shell, plain];
+  const { mod, context } = await harness({ panes });
+  const tab = context.spaces()[0].tabs.find(({ id }) => id === "d");
+  context.focused = () => ({ tab: tab.id, pane: shell.pane });
+  const drawn = (tree) => ids(tree).filter((id) => ["pane-p-shell", "tab-d"].includes(id));
+  let tree = mod.render();
+  assert.deepEqual(drawn(tree), ["pane-p-shell", "tab-d"]);
+  assert.equal(find(tree, "pane-p-shell").background, "selected");
+  assert.equal(find(tree, "tab-d").background, undefined);
+  context.focused = () => ({ tab: tab.id, pane: plain.pane });
+  tree = mod.render();
+  assert.equal(find(tree, "tab-d").background, "selected");
+  const calls = [];
+  context.run = (command, { id }) => calls.push([command, id]);
+  find(tree, "tab-d").handlers.click();
+  assert.deepEqual(calls, [["space.select", "shop"], ["tab.select", "d"]]);
+
+  panes.pop();
+  assert.deepEqual(drawn(mod.render()), ["pane-p-shell"]);
+  shell.name = null;
+  assert.deepEqual(drawn(mod.render()), ["tab-d"]);
+  shell.name = "named";
+  tab.settled = true;
+  assert.deepEqual(drawn(mod.render()), []);
 });
 
 test("the Agents tab counts agents, and picking a tab keeps it", async () => {

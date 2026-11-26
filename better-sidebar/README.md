@@ -64,14 +64,16 @@ The agents block is adapted from Herdr's shipped panel and keeps its pins, sub-a
 - **Grouped by main space** puts a worktree's agents with its main checkout's, under the main space's name. A worktree whose main space is not open groups under the repository's folder name. It needs the spaces block of this mod in the same layout; without it each space is its own group.
 - **Grouped by prefix** gathers names like `PR-12`, `INS-4` and `PLAT-work`, also after a folder as in `feature/INS-4`. It reads the worktree or space name first, then the tab name. Capitals need only the dash, lower case needs a number after it, so `pr-12` counts and `herdr-mods` does not. Everything else goes under **No prefix**, last.
 
+Use **Rename pane** to give an agent its own label in both lists. Clear the name to go back to the usual label.
+
 Pinning an agent asks Herdr to keep the pin with the agent's terminal, so the pin shows in every Herdr window and on the phone, and ends with the agent. A sub-agent that has a pane of its own shows once, under its parent.
 
 ### Spaces and agents in one block
 
 A block with `"props": { "view": "lists" }` shows both lists, under two tabs:
 
-- **Spaces:** the spaces list, with each space's tabs beneath it in order, joined by tree lines: each row is its tab's title as Herdr's tab bar shows it, then its program quietly beside it, like `1 Claude Code` or `2 zsh`. Clicking one opens it. Pinned agents sit in a Pinned group above every space. Next-agent keys follow the same order.
-- **Agents:** the agents list, with its grouping menu at the right of the tabs. Each row reads its tab's title, then its space quietly beside it, like `1 herdr-mods`; the icon says which agent it is.
+- **Spaces:** the spaces list, with each space's tabs beneath it in order, joined by tree lines: named terminals and agents appear in pane order, with the program beside each name. In a split named `a` and `b`, a shell in `a` stays visible when an agent starts in `b`. Click a pane row to focus that pane. A plain tab with no named panes keeps its tab row. Pinned agents sit in a Pinned group above every space. Next-agent keys follow the same order.
+- **Agents:** the agents list, with its grouping menu at the right of the tabs. Each row shows the agent's label with its space quietly beside it, like `1 herdr-mods`; the icon says which agent it is.
 
 The Agents tab shows how many agents there are. For the ones that need you first, sort Agents by priority. The tab you pick is remembered. On the narrow rail, the two lists sit one above the other.
 
@@ -110,7 +112,7 @@ The PR badge has no merge or review controls. Selecting its row selects the spac
 | `git.retry_after` | `15s` | How long a failed Git read waits before it's tried again. |
 | `combined` | `true` | Show the `lists` view as Spaces and Agents tabs. `false` stacks spaces above agents in the same block. |
 | `pull_request_status` | `true` | Colour spaces by their PR's state through the GitHub CLI. Set `false` if you don't have `gh`. |
-| `agent_name` | `tab` | What each agent row is called: `tab` for its tab's name, `title` for the terminal's live title, which agents set to what they're doing. Either falls back to the other. |
+| `agent_name` | `tab` | The label for agents with unnamed panes. Choose `tab` for the tab name or `title` for the live terminal title. Either falls back to the other. |
 
 ## Update
 

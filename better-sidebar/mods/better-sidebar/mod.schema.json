@@ -92,7 +92,7 @@
         },
         "agent_name": {
           "title": "Agent names",
-          "description": "What each agent row is called: its tab's name, as Herdr's tab bar shows it, or the terminal's live title, which agents set to what they're doing. Either falls back to the other.",
+          "description": "The label for agents with unnamed panes. Choose the tab name or the terminal's live title. Either falls back to the other.",
           "enum": [
             "tab",
             "title"

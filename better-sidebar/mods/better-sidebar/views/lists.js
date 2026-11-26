@@ -2,12 +2,38 @@
 // each space's tabs and agents under it, and Agents. With `combined: false` in the settings: the
 // two lists one above the other, as two blocks of this mod would draw them.
 import { v_flex, h_flex } from "gpui-base";
-import { focused, theme, setAgentOrder } from "herdr";
+import { theme, setAgentOrder } from "herdr";
 import { Spaces } from "./spaces.js";
 import { Agents } from "./agents.js";
 import { TEXT, Badge, Rail } from "./ui.js";
 
 const TABS = ["spaces", "agents"];
+
+function tabItems(tab, panes, agents, hasAgent, isAgentPane) {
+  if (!hasAgent && tab.settled) return [];
+  const namedPanes = new Set(panes.filter((p) => p.terminal && p.name && !isAgentPane(p)));
+  if (namedPanes.size === 0) return hasAgent ? agents.map((a) => ({ a })) : [{ tab }];
+
+  const items = [];
+  const waiting = new Map(agents.map((a) => [a.pane, a]));
+  // On tabs without agents, one tab row represents any unnamed or mod panes.
+  let fallback = !hasAgent;
+  for (const pane of panes) {
+    const a = waiting.get(pane.pane);
+    if (a) {
+      items.push({ a });
+      waiting.delete(pane.pane);
+    } else if (namedPanes.has(pane)) {
+      items.push({ pane });
+    } else if (fallback) {
+      items.push({ tab });
+      fallback = false;
+    }
+  }
+  // Agent rows still work when their pane information is missing.
+  for (const a of waiting.values()) items.push({ a });
+  return items;
+}
 
 export class Lists {
   init(props, cx) {
@@ -60,15 +86,19 @@ export class Lists {
     const order = [];
     // The agents as they are listed: a kept sub-agent is under its parent, so
     // it is not drawn again under its space.
-    const all = view.model;
     const pinned = view.groups.find((g) => g.id === "pinned");
     const pinList = pinned?.members.map((a) => a.address) ?? [];
     order.push(...pinList);
     const pins = new Set(pinList);
-    const hasAgentTab = new Set(all.map((a) => a.tab));
+    // A kept sub-agent can appear under a parent in another tab. Its own tab keeps its entry.
+    const agentTabs = new Set(view.model.map((a) => a.tab));
+    const agentPanes = new Set(view.allAgents.map((a) => a.pane));
+    const agentTerminals = new Set(view.allAgents.map((a) => a.address));
+    const isAgentPane = (p) =>
+      agentPanes.has(p.pane) || agentTerminals.has(p.terminal) || view.namedSubPanes.has(p.terminal);
     const agentsByTab = new Map();
     const focusedSpaces = new Set();
-    for (const a of all) {
+    for (const a of view.model) {
       if (a.focused) focusedSpaces.add(a.space);
       if (pins.has(a.address)) continue;
       let list = agentsByTab.get(a.tab);
@@ -77,29 +107,42 @@ export class Lists {
     }
     this.spaces.above = () => (pinned ? this.agents.groupRows(pinned, 0, view, t) : []);
     const nest = (lines, row) => h_flex().children(lines.map((l) => Rail(l))).child(row.flex_1().min_w(0));
-    // A space's agents hang from its line; a main space's worktrees come after them,
-    // so its line carries on, and a worktree's own agents sit one step further in.
-    // Every tab shows: a tab with agents as its agents, any other as itself.
-    const shownTab = "shownTab" in view ? view.shownTab : focused()?.tab;
+    const itemsBySpace = new Map();
+    for (const w of view.sp) {
+      const items = (w.tabs ?? []).flatMap((tab) => {
+        const rows = tabItems(
+          tab,
+          view.panesByTab.get(tab.id) ?? [],
+          agentsByTab.get(tab.id) ?? [],
+          agentTabs.has(tab.id),
+          isAgentPane,
+        );
+        if (tab.id === view.shownTab && !view.shownSubPane) {
+          const chosen = rows.find((x) => x.pane && x.pane.pane === view.shownPane) ?? rows.find((x) => x.tab);
+          if (chosen) chosen.lit = true;
+        }
+        return rows;
+      });
+      itemsBySpace.set(w.id, items);
+    }
+    // The main space's line carries on to its worktrees, whose rows sit one step further in.
     this.spaces.under = ({ w, tree, kids }) => {
-      const items = w.tabs.flatMap((tab) =>
-        hasAgentTab.has(tab.id)
-          ? (agentsByTab.get(tab.id) ?? []).map((a) => ({ a }))
-          : tab.settled ? [] : [{ tab }],
-      );
+      const items = itemsBySpace.get(w.id);
       for (const x of items) if (x.a) order.push(x.a.address);
       const before = tree ? [tree.startsWith("└") ? "" : "│"] : [];
       return items.flatMap((x, i) => {
         const last = i === items.length - 1 && !kids;
         const [row, ...subs] = x.a
           ? this.agents.agentWithSubs(x.a, i, nested, t)
-          : [this.agents.tabRow(w, x.tab, x.tab.id === shownTab, t, view)];
+          : [x.pane ? this.agents.paneRow(x.pane, x.lit, t) : this.agents.tabRow(w, x.tab, x.lit, t, view)];
         return [nest([...before, last ? "└" : "├"], row), ...subs.map((s) => nest([...before, last ? "" : "│"], s))];
       });
     };
-    // One row lit: a space whose focused agent or tab shows beneath it leaves it to that row.
+    // A focused child row takes the highlight from its space.
     this.spaces.quiet = (w) =>
-      focusedSpaces.has(w.id) || w.tabs.some((tab) => tab.id === shownTab && !hasAgentTab.has(tab.id));
+      focusedSpaces.has(w.id) ||
+      itemsBySpace.get(w.id).some((x) => x.lit) ||
+      (view.shownSubPane && w.tabs?.some((tab) => tab.id === view.shownSubPane.tab));
     const frame = this.spaces.createFrame({ sp: view.sp, ps: view.allPanes });
     const body = this.spaces.body(t, false, frame);
     setAgentOrder(order);

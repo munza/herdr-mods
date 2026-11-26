@@ -246,16 +246,17 @@ test("a kept sub-agent focuses its pane, while a parked one peeks", () => {
     { address: "t1", state: "live", name: "parent" },
     { address: "kid", parent: "t1", state: "live", name: "child" },
   ];
-  h.live.agents.push({ address: "kid", status: "working", pane: "p-kid" });
-  mod.listed = new Map([["kid", "working"]]);
+  h.live.agents.push({ address: "kid", status: "working", pane: "p-kid", pane_name: "Review" });
+  mod.readView();
   let row = mod.subRow(h.context.theme(), { t: h.live.terminals[1], lines: [] }, null, false);
+  assert.match(strings(row), /Review/);
   row.handlers.click();
   assert.equal(h.commands.at(-1).name, "pane.focus");
   assert.equal(h.commands.at(-1).args.terminal, "kid");
   h.live.agents = h.live.agents.filter((a) => a.address !== "kid");
-  mod.render(cx);
-  mod.listed = new Map();
+  mod.readView();
   row = mod.subRow(h.context.theme(), { t: h.live.terminals[1], lines: [] }, null, false);
+  assert.match(strings(row), /child/);
   row.handlers.click();
   assert.equal(h.commands.at(-1).name, "terminal.peek");
 });
