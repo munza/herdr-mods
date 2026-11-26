@@ -319,6 +319,19 @@ test("Mod settings sits after Settings and opens Better Config, when it's instal
   assert.equal(h.commands[0].args.name, "better-config");
 });
 
+test("Better Rail takes the Mod settings button out of the footer", async () => {
+  const h = harness("footer");
+  h.live.files = {
+    "/app/mods/better-config/mod.json": "{}",
+    "/app/mods/better-rail/mod.json": "{}",
+  };
+  h.live.shared["better-rail.active"] = true;
+  const footer = load(h, "views/footer.js", "Footer");
+  footer.init(null, { notify: () => {} });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(!find(footer.render(), "mod-settings"));
+});
+
 test("the panel toggle hides the right panel by click and key, and names what it will do", async () => {
   const h = harness("panel-toggle");
   const toggle = load(h, "views/panel-toggle.js", "PanelToggle");

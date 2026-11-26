@@ -3,19 +3,22 @@
 // opens Better Config, and shows only when that mod is installed.
 import { div } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { theme, run, updates, readTextFile, appHome } from "herdr";
+import { theme, run, updates, readTextFile, appHome, shared } from "herdr";
 import { Icon, SIZE } from "./ui.js";
 
 export class Footer {
   init(_given, cx) {
     this.hasConfig = false;
-    // shortcut: checked once, so installing Better Config shows the button after the next reload.
-    readTextFile(`${appHome()}/mods/better-config/mod.json`)
-      .then((raw) => {
-        this.hasConfig = raw !== null;
-        cx?.notify();
-      })
-      .catch(() => {});
+    this.hasRail = false;
+    // shortcut: checked once, so installing Better Config or Better Rail shows the change after the next reload.
+    Promise.all([
+      readTextFile(`${appHome()}/mods/better-config/mod.json`).catch(() => null),
+      readTextFile(`${appHome()}/mods/better-rail/mod.json`).catch(() => null),
+    ]).then(([config, rail]) => {
+      this.hasConfig = config !== null;
+      this.hasRail = rail !== null;
+      cx?.notify();
+    });
   }
 
   button(id, label, action, t, icons) {
@@ -54,7 +57,7 @@ export class Footer {
           ...updateDot,
         ]),
       )
-      .when(this.hasConfig, (el) =>
+      .when(this.hasConfig && !(this.hasRail && shared("better-rail.active")), (el) =>
         el.child(
           this.button("mod-settings", "Mod settings", () => run("mod.open", { name: "better-config" }), t, [
             Icon("sliders"),

@@ -61,6 +61,19 @@
       "description": "Your changes. A setting left out uses its default.",
       "additionalProperties": false,
       "properties": {
+        "toolbar": {
+          "title": "Panel buttons",
+          "description": "Where the panel buttons and their menu live: in the tab bar, or in Better Rail's right-side rail.",
+          "enum": [
+            "tab",
+            "rail"
+          ],
+          "x-labels": {
+            "tab": "Tab bar",
+            "rail": "Side rail"
+          },
+          "default": "tab"
+        },
         "tabs": {
           "type": "object",
           "additionalProperties": false,

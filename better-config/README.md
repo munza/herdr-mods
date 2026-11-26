@@ -49,7 +49,7 @@ No more hand-editing each mod's `mod.json` or reading its README to learn what a
 
 - **Open and close:** the key opens the dialog; the same key, or Esc, closes it.
 - **One place:** the list on the left has each installed mod with settings, and a red dot marks one that needs attention. Each mod gets a page, with every setting's name, what it does and its key, grouped by the first part of the key.
-- **The right control:** on/off switches, buttons for up to four choices or else a dropdown (↑, ↓, Enter, Esc), − and + for numbers, text boxes for times (`450ms`, `10s`), sizes (`60KB`), text and comma-separated lists, and a multi-line editor with highlighting for JSON. A text box saves on Enter or when it loses focus; the JSON editor, where Enter starts a new line, saves when it loses focus.
+- **The right control:** on/off switches, buttons for up to four choices or else a dropdown (↑, ↓, Enter, Esc), − and + for numbers, text boxes for times (`450ms`, `10s`), sizes (`60KB`), text and comma-separated lists, and a multi-line editor with highlighting for JSON. Better Rail's icon order is its own list: each button's icon, name and ↑/↓ controls. A text box saves on Enter or when it loses focus; the JSON editor, where Enter starts a new line, saves when it loses focus.
 - **Checked before saving:** a value that doesn't fit is explained in red under its field and never written. A bad value someone typed into `mod.json` by hand shows there too, instead of only in a log.
 - **Applies at once:** a change is saved to the mod's own `mod.json`, and Herdr reloads the mod straight away.
 - **See what you changed:** a dot marks every setting you've changed from its default. **Reset** puts one back, and **Reset all** puts a whole mod back.
