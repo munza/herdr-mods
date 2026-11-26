@@ -20,7 +20,7 @@ import { menuMethods } from "./views/menu.js";
 import { nameMethods } from "./actions/names.js";
 
 // Preferences a person may change in the installed mod.json under `settings`.
-const DEFAULT_SETTINGS = { tabs: { max_width: 170, drag_delay: "400ms", auto_name: true }, menu: { width: 240 } };
+const DEFAULT_SETTINGS = { toolbar: "tab", tabs: { max_width: 170, drag_delay: "400ms", auto_name: true }, menu: { width: 240 } };
 
 const DEFAULTS = {
   rememberPanels: { container: "panel", stack: "panel-body" },
@@ -55,6 +55,7 @@ class Tabs extends View {
       const { settings, problems } = await loadSettings("better-tabs", DEFAULT_SETTINGS);
       this.settings = settings;
       this.settingsReady = true;
+      setShared("better-tabs.toolbar", settings.toolbar);
       for (const problem of problems) console.warn(`better-tabs mod.json settings: ${problem}`);
       cx.notify();
     });

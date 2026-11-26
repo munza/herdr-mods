@@ -79,7 +79,7 @@ Turn `combined` off in the settings for spaces above agents in the same block, w
 
 ### Footer
 
-Settings and Add machine sit on one line as icons, with their names in tooltips. Settings shows a dot when an update is ready. With [Better Config](../better-config/README.md) installed, a Mod settings icon after Settings opens it.
+Settings and Add machine sit on one line as icons, with their names in tooltips. Settings shows a dot when an update is ready. With [Better Config](../better-config/README.md) installed, a Mod settings icon after Settings opens it. With [Better Rail](../better-rail/README.md) installed, that icon moves to the bottom of the rail instead.
 
 ![The footer keeps Settings at the left and Add machine at the right](footer.png)
 

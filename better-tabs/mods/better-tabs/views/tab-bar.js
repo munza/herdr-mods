@@ -256,6 +256,8 @@ export const tabBarMethods = {
   },
 
   renderToolbar(t) {
+    // Better Rail owns the panel buttons when the toolbar setting says rail.
+    if (this.settings?.toolbar === "rail") return div().w(0).h(TAB_HEIGHT).flex_none();
     const { visible, overflow } = this.toolbar();
     const toolbar = h_flex()
       .id("action-toolbar")

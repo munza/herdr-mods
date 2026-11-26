@@ -587,9 +587,11 @@ test("package is standalone with local icons and no layout or helper dependency"
     source,
     /mods\/(?:pull-requests|workspace-chrome|factory-spaces)|herdr-pr/,
   );
-  // The one look outside its folder: whether Better Config is installed, to show its button.
-  assert.deepEqual(source.match(/appHome\(\)[^`]*/g), ["appHome()}/mods/better-config/mod.json"]);
-  const imports = [...source.replace("appHome()}/mods/better-config/mod.json", "").matchAll(/mods\/([^/]+)\//g)];
+  // The looks outside its folder: whether Better Config and Better Rail are installed.
+  const peers = ["appHome()}/mods/better-config/mod.json", "appHome()}/mods/better-rail/mod.json"];
+  assert.deepEqual(source.match(/appHome\(\)[^`]*/g), peers);
+  const stripped = peers.reduce((text, peer) => text.replace(peer, ""), source);
+  const imports = [...stripped.matchAll(/mods\/([^/]+)\//g)];
   assert.ok(imports.every((match) => match[1] === "better-sidebar"));
   for (const icon of [
     "branch",

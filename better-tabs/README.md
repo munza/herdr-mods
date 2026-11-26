@@ -41,6 +41,7 @@ No requirements. The mod runs no programs and reaches no network. It runs Herdr 
 
 | Key | Default | What it does |
 | --- | --- | --- |
+| `toolbar` | `tab` | Where the panel buttons live: `tab` in the tab bar, `rail` in [Better Rail](../better-rail/README.md). |
 | `tabs.max_width` | `170` | The widest a tab gets, in px. At least 60. |
 | `tabs.drag_delay` | `400ms` | How long a press must last before a tab can be dragged. |
 | `tabs.auto_name` | `true` | Tabs name themselves after what runs in them. `false` turns it off. |

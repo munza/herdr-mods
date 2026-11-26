@@ -1006,6 +1006,13 @@ test("a name the person typed that matches the agent's name stays", () => {
   assert.deepEqual(tick(), []);
 });
 
+test("the rail setting removes the tab-bar toolbar", () => {
+  const h = harness({ buttons: [{ id: "files", action: { type: "panel", container: "panel", stack: "panel-body", target: "files" } }] });
+  assert.ok(h.find(h.tabs.render(h.cx), "action-toolbar"), "tab mode keeps the toolbar");
+  h.tabs.settings = { ...h.tabs.settings, toolbar: "rail" };
+  assert.equal(h.find(h.tabs.render(h.cx), "action-toolbar"), undefined);
+});
+
 test("a name the person typed that matches a program that isn't an agent stays when it quits", () => {
   const agent = { pane: "p1", tab: "t1", terminal: "x1", title: "Fix the login form", cwd: "/work", program: AGENT("Claude Code") };
   const editor = { pane: "p2", tab: "t1", terminal: "x2", title: "nvim", cwd: "/work/lantern", program: NVIM };
